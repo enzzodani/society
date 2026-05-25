@@ -88,7 +88,7 @@ export function Dashboard() {
           )}
         </div>
 
-        <h1 className="text-white text-4xl tracking-tight mb-6">Sábado é dia de bola</h1>
+        <h1 className="text-white text-4xl tracking-tight mb-6">Informações do Evento</h1>
 
         {nextDateValid ? (
           <>
@@ -105,7 +105,7 @@ export function Dashboard() {
                   <Clock className="w-3.5 h-3.5" /> Horário
                 </div>
                 <div className="text-white text-2xl tracking-tight tabular-nums">{nextDateValid.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</div>
-                <div className="text-[#CCCCCC] text-sm mt-0.5">Duração 90 min</div>
+                <div className="text-[#CCCCCC] text-sm mt-0.5">Duração 2h</div>
               </div>
               <div className="rounded-md border border-[#3E3E42] bg-[#1E1E1E] p-5">
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-[#858585] mb-2">
