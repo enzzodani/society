@@ -4,6 +4,36 @@ import { useData } from "../DataContext";
 import { Modal } from "./Modal";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from "recharts";
 
+type Period = "season" | "month" | "year" | "custom" | "last";
+
+function startOfMonth(d: Date): Date { return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0); }
+function endOfMonth(d: Date): Date { return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999); }
+function startOfYear(d: Date): Date { return new Date(d.getFullYear(), 0, 1, 0, 0, 0, 0); }
+function endOfYear(d: Date): Date { return new Date(d.getFullYear(), 11, 31, 23, 59, 59, 999); }
+
+function PeriodFilter({ value, onChange }: { value: Period; onChange: (p: Period) => void }) {
+  const opts: { id: Period; label: string }[] = [
+    { id: "last", label: "Última Pelada" },
+    { id: "month", label: "Mês" },
+    { id: "season", label: "Temporada" },
+    { id: "year", label: "Ano" },
+    { id: "custom", label: "Personalizado" },
+  ];
+  return (
+    <div className="flex items-center bg-[#1E1E1E] border border-[#3E3E42] rounded-md p-0.5">
+      {opts.map((o) => (
+        <button
+          key={o.id}
+          onClick={() => onChange(o.id)}
+          className={`px-3 py-1 rounded text-xs ${value === o.id ? "bg-[#007ACC] text-white" : "text-[#CCCCCC] hover:text-white"}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ScoreDigit({ n, win }: { n: number; win: boolean }) {
   return (
     <div
@@ -64,22 +94,149 @@ function MatchEventsList({ events, team }: { events: any[]; team: "Vermelho" | "
   );
 }
 
+function SessionLeaderboard({ matches, ratingRules }: { matches: any[]; ratingRules?: any }) {
+  const leaderboard = useMemo(() => {
+    const stats = new Map<string, { name: string, matches: number, goals: number, assists: number, wins: number, draws: number, losses: number, ga: number }>();
+    matches.forEach(m => {
+      const redWin = m.scoreA > m.scoreB;
+      const whiteWin = m.scoreB > m.scoreA;
+      
+      const apply = (p: any, side: "red"|"white") => {
+        if (!p || !p.id) return;
+        const s = stats.get(p.id) || { name: p.name, matches: 0, goals: 0, assists: 0, wins: 0, draws: 0, losses: 0, ga: 0 };
+        s.matches++;
+        if ((side === "red" && redWin) || (side === "white" && whiteWin)) s.wins++;
+        else if (!redWin && !whiteWin) s.draws++;
+        else s.losses++;
+        stats.set(p.id, s);
+      };
+      m.redRoster.forEach((p: any) => apply(p, "red"));
+      m.whiteRoster.forEach((p: any) => apply(p, "white"));
+      
+      m.events.forEach((e: any) => {
+        if (e.type === "goal") {
+          if (e.playerId && stats.has(e.playerId)) {
+            const s = stats.get(e.playerId)!;
+            s.goals++;
+            s.ga++;
+          }
+          if (e.assistId && stats.has(e.assistId)) {
+            const s = stats.get(e.assistId)!;
+            s.assists++;
+            s.ga++;
+          }
+        }
+      });
+    });
+
+    return Array.from(stats.values()).sort((a, b) => b.ga - a.ga || b.goals - a.goals || b.wins - a.wins);
+  }, [matches]);
+
+  if (leaderboard.length === 0) return null;
+
+  return (
+    <div className="bg-[#1E1E1E] border border-[#3E3E42] rounded-md overflow-hidden mt-4">
+      <div className="bg-[#2D2D30] border-b border-[#3E3E42] p-3 flex items-center justify-between">
+        <h3 className="text-white text-sm font-medium">Classificação da Pelada</h3>
+        <div className="text-[10px] text-[#858585] uppercase tracking-widest cursor-help" title="Pontuação e Rating conforme algoritmo interno do app">Métricas</div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-[#858585] text-xs uppercase tracking-widest border-b border-[#3E3E42]">
+              <th className="px-4 py-2 w-8">#</th>
+              <th className="py-2">Jogador</th>
+              <th className="px-2 py-2 text-center" title="Partidas Jogadas">PJ</th>
+              <th className="px-2 py-2 text-center" title="Vitórias">V</th>
+              <th className="px-2 py-2 text-center" title="Gols">G</th>
+              <th className="px-2 py-2 text-center" title="Assistências">A</th>
+              <th className="px-4 py-2 text-center text-white" title="Gols + Assistências">G+A</th>
+            </tr>
+          </thead>
+          <tbody>
+            {leaderboard.map((p, i) => (
+              <tr key={p.name} className="border-b border-[#3E3E42] last:border-b-0 hover:bg-[#252526] transition">
+                <td className="px-4 py-2 text-[#858585] tabular-nums">{i + 1}</td>
+                <td className="py-2 text-[#D4D4D4]">{p.name}</td>
+                <td className="px-2 py-2 text-center text-[#858585] tabular-nums">{p.matches}</td>
+                <td className="px-2 py-2 text-center text-[#89D185] tabular-nums">{p.wins}</td>
+                <td className="px-2 py-2 text-center text-[#CCCCCC] tabular-nums">{p.goals}</td>
+                <td className="px-2 py-2 text-center text-[#CCCCCC] tabular-nums">{p.assists}</td>
+                <td className="px-4 py-2 text-center text-white font-bold tabular-nums">{p.ga}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function Peladas() {
   const { data } = useData();
   const sessions = data?.sessions ?? [];
   const matches = data?.matches ?? [];
 
   const [query, setQuery] = useState("");
+  const [period, setPeriod] = useState<Period>("season");
+  const [customFrom, setCustomFrom] = useState("2026-01-01");
+  const [customTo, setCustomTo] = useState("2026-12-31");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [openMatchId, setOpenMatchId] = useState<string | null>(null);
 
+  const range = useMemo<{ from: Date | null; to: Date | null }>(() => {
+    if (period === "season") return { from: null, to: null };
+
+    let refDate = new Date();
+    if (matches.length > 0) {
+      const latestMatchTime = Math.max(...matches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t)));
+      if (latestMatchTime > 0) refDate = new Date(latestMatchTime);
+    }
+
+    if (period === "last") {
+      return { 
+        from: new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 0, 0, 0, 0),
+        to: new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 23, 59, 59, 999)
+      };
+    }
+    if (period === "month") return { from: startOfMonth(refDate), to: endOfMonth(refDate) };
+    if (period === "year") return { from: startOfYear(refDate), to: endOfYear(refDate) };
+
+    const [fy, fm, fd] = customFrom.split("-").map(Number);
+    const [ty, tm, td] = customTo.split("-").map(Number);
+    return {
+      from: new Date(fy, (fm || 1) - 1, fd || 1, 0, 0, 0, 0),
+      to: new Date(ty, (tm || 1) - 1, td || 1, 23, 59, 59, 999),
+    };
+  }, [period, customFrom, customTo, matches]);
+
+  const activeMatches = useMemo(() => {
+    return matches.filter(m => {
+      const t = new Date(m.date).getTime();
+      if (isNaN(t)) return false;
+      if (range.from && t < range.from.getTime()) return false;
+      if (range.to && t > range.to.getTime()) return false;
+      return true;
+    });
+  }, [matches, range]);
+
+  const activeSessions = useMemo(() => {
+    return sessions.filter(s => {
+      const t = new Date(s.timestamp).getTime();
+      if (isNaN(t)) return false;
+      if (range.from && t < range.from.getTime()) return false;
+      if (range.to && t > range.to.getTime()) return false;
+      return true;
+    });
+  }, [sessions, range]);
+
   const filteredSessions = useMemo(() => {
-    return sessions.filter((s) => {
+    return activeSessions.filter((s) => {
       if (query.trim()) {
         const q = query.toLowerCase();
         if (s.title.toLowerCase().includes(q) || s.date.toLowerCase().includes(q)) return true;
         // Search inside session matches
-        const sessionMatches = matches.filter(m => m.sessionId === s.id);
+        const sessionMatches = activeMatches.filter(m => m.sessionId === s.id);
         const hasMatch = sessionMatches.some(m => {
           const inTeams = m.teamA.toLowerCase().includes(q) || m.teamB.toLowerCase().includes(q);
           const names = [...m.redRoster, ...m.whiteRoster].map((r) => r.name);
@@ -90,29 +247,29 @@ export function Peladas() {
       }
       return true;
     });
-  }, [query, sessions, matches]);
+  }, [query, activeSessions, activeMatches]);
 
   const selectedSessionMatches = useMemo(() => {
     if (!selectedSessionId) return [];
-    return matches.filter(m => m.sessionId === selectedSessionId);
-  }, [selectedSessionId, matches]);
+    return activeMatches.filter(m => m.sessionId === selectedSessionId);
+  }, [selectedSessionId, activeMatches]);
 
   // Chart 1: Evolução (LineChart)
   const evolutionData = useMemo(() => {
-    return [...sessions].reverse().map(s => {
+    return [...activeSessions].reverse().map(s => {
       let goals = (s as any).avgGoals;
       if (goals === undefined) {
-        const sessionMatches = matches.filter(m => m.sessionId === s.id);
+        const sessionMatches = activeMatches.filter(m => m.sessionId === s.id);
         const totalGoals = sessionMatches.reduce((acc, m) => acc + m.scoreA + m.scoreB, 0);
         goals = sessionMatches.length ? totalGoals / sessionMatches.length : 0;
       }
       return {
         name: s.date.slice(0, 5), // DD/MM
         "Média de Gols": goals ? Number(Number(goals).toFixed(1)) : 0,
-        "Nota Média": (s as any).avgRating ? Number(Number((s as any).avgRating).toFixed(1)) : 0
+        "Nota Média": (s as any).avgRating ? Number(Number((s as any).avgRating).toFixed(2)) : 0
       };
     }).filter(d => d["Nota Média"] > 0 || d["Média de Gols"] > 0);
-  }, [sessions, matches]);
+  }, [activeSessions, activeMatches]);
 
   // Chart 2: Goal Frequency (BarChart)
   const goalFrequencyData = useMemo(() => {
@@ -124,7 +281,7 @@ export function Peladas() {
       { name: "8-10'", count: 0 },
       { name: "10+'", count: 0 },
     ];
-    matches.forEach(m => {
+    activeMatches.forEach(m => {
       m.events.forEach(e => {
         if (e.type === "goal" && e.time) {
           const minStr = e.time.split(":")[0];
@@ -141,24 +298,24 @@ export function Peladas() {
       });
     });
     return buckets;
-  }, [matches]);
+  }, [activeMatches]);
 
   const globalStats = useMemo(() => {
-    if (sessions.length === 0) return { avgGoals: 0, avgPlayers: 0 };
+    if (activeSessions.length === 0) return { avgGoals: 0, avgPlayers: 0 };
     let totalGoals = 0;
     let totalMatches = 0;
     let totalPlayers = 0;
-    sessions.forEach(s => {
-      const sessionMatches = matches.filter(m => m.sessionId === s.id);
+    activeSessions.forEach(s => {
+      const sessionMatches = activeMatches.filter(m => m.sessionId === s.id);
       totalGoals += sessionMatches.reduce((acc, m) => acc + m.scoreA + m.scoreB, 0);
       totalMatches += sessionMatches.length;
       totalPlayers += s.jogadores || 0;
     });
     return {
       avgGoals: totalMatches ? (totalGoals / totalMatches).toFixed(1) : "0.0",
-      avgPlayers: sessions.length ? Math.round(totalPlayers / sessions.length) : 0,
+      avgPlayers: activeSessions.length ? Math.round(totalPlayers / activeSessions.length) : 0,
     };
-  }, [sessions, matches]);
+  }, [activeSessions, activeMatches]);
 
   return (
     <div className="space-y-8">
@@ -167,18 +324,30 @@ export function Peladas() {
           <h1 className="text-white tracking-tight text-2xl mb-1">Peladas</h1>
           <p className="text-[#858585] text-sm">Resumo de estatísticas e sessões anteriores</p>
         </div>
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#858585]" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por data, jogador..."
-            className="w-full pl-9 pr-3 py-2 rounded-md bg-[#3C3C3C] border border-[#3E3E42] text-sm text-[#D4D4D4] placeholder:text-[#858585] focus:outline-none focus:border-[#007ACC]"
-          />
+        <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
+          <PeriodFilter value={period} onChange={setPeriod} />
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#858585]" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar por data, jogador..."
+              className="w-full pl-9 pr-3 py-2 rounded-md bg-[#3C3C3C] border border-[#3E3E42] text-sm text-[#D4D4D4] placeholder:text-[#858585] focus:outline-none focus:border-[#007ACC]"
+            />
+          </div>
         </div>
       </div>
 
-      {sessions.length === 0 ? (
+      {period === "custom" && (
+        <div className="px-5 py-3 rounded-md border border-[#3E3E42] bg-[#1E1E1E] flex flex-wrap gap-3 items-center">
+          <span className="text-[10px] uppercase tracking-widest text-[#858585]">Período</span>
+          <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="px-2 py-1 rounded bg-[#252526] border border-[#3E3E42] text-xs text-[#D4D4D4] focus:outline-none focus:border-[#007ACC]" />
+          <span className="text-xs text-[#858585]">até</span>
+          <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="px-2 py-1 rounded bg-[#252526] border border-[#3E3E42] text-xs text-[#D4D4D4] focus:outline-none focus:border-[#007ACC]" />
+        </div>
+      )}
+
+      {activeSessions.length === 0 ? (
         <div className="rounded-md border border-[#3E3E42] bg-[#252526] p-12 text-center text-[#858585]">
           Sem dados ainda. Configure o Firebase em src/app/firebase.ts.
         </div>
@@ -245,7 +414,7 @@ export function Peladas() {
             <h2 className="text-white tracking-tight text-lg border-b border-[#3E3E42] pb-2">Sessões Anteriores</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {filteredSessions.map((s) => {
-                const sessionMatches = matches.filter(m => m.sessionId === s.id);
+                const sessionMatches = activeMatches.filter(m => m.sessionId === s.id);
                 let totalGoals = 0;
                 sessionMatches.forEach(m => totalGoals += m.scoreA + m.scoreB);
                 const avg = sessionMatches.length ? (totalGoals / sessionMatches.length).toFixed(1) : "0.0";
@@ -281,7 +450,7 @@ export function Peladas() {
                       {(s as any).avgRating > 0 && (
                         <div>
                           <div className="text-[10px] text-[#858585] uppercase tracking-widest">Nota Média</div>
-                          <div className="text-[#89D185] text-sm tabular-nums">{Number((s as any).avgRating).toFixed(1)}</div>
+                          <div className="text-[#89D185] text-sm tabular-nums">{Number((s as any).avgRating).toFixed(2)}</div>
                         </div>
                       )}
                     </div>
@@ -304,6 +473,8 @@ export function Peladas() {
           size="lg"
         >
           <div className="space-y-4">
+            <SessionLeaderboard matches={selectedSessionMatches} ratingRules={data?.ratingRules} />
+            <h3 className="text-white font-medium mt-4 border-b border-[#3E3E42] pb-2">Partidas</h3>
             {selectedSessionMatches.map((mt, idx) => {
               const winA = mt.scoreA > mt.scoreB;
               const winB = mt.scoreB > mt.scoreA;

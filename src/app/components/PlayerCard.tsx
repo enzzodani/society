@@ -19,17 +19,17 @@ function MainStat({ label, value, color }: { label: string; value: number | stri
   );
 }
 
-function AdvRow({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string; sub?: string }) {
+function AdvCard({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string; sub?: string }) {
   return (
-    <div className="flex items-center gap-4 py-3 border-b border-[#3E3E42] last:border-b-0">
-      <div className="w-9 h-9 rounded-md bg-[#1E1E1E] border border-[#3E3E42] flex items-center justify-center shrink-0">
-        <Icon className="w-4 h-4 text-[#4FC3F7]" />
+    <div className="bg-[#1E1E1E] border border-[#3E3E42] rounded-md p-3 flex flex-col items-start gap-1 relative overflow-hidden group hover:border-[#4FC3F7]/50 transition-colors">
+      <div className="w-8 h-8 rounded-full bg-[#2D2D30] border border-[#3E3E42] flex items-center justify-center shrink-0 mb-1">
+        <Icon className="w-4 h-4 text-[#4FC3F7] group-hover:scale-110 transition-transform" />
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[11px] uppercase tracking-widest text-[#858585]">{label}</div>
-        <div className="text-[#D4D4D4] truncate">{value}</div>
+      <div className="flex-1 min-w-0 w-full z-10">
+        <div className="text-[9px] uppercase tracking-widest text-[#858585] mb-0.5 line-clamp-1" title={label}>{label}</div>
+        <div className="text-sm text-[#D4D4D4] font-medium truncate w-full" title={value}>{value}</div>
       </div>
-      {sub && <div className="text-xs text-[#858585] tabular-nums shrink-0">{sub}</div>}
+      {sub && <div className="absolute top-3 right-3 text-[10px] text-[#89D185] font-bold tabular-nums bg-[#252526] px-1.5 py-0.5 rounded border border-[#3E3E42] z-10 shadow-sm">{sub}</div>}
     </div>
   );
 }
@@ -152,7 +152,7 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
         className="bg-[#252526] border border-[#3E3E42] rounded-md max-w-3xl w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-[#252526] border-b border-[#3E3E42] p-5 flex items-center gap-4 z-10">
+        <div className="sticky top-0 bg-[#252526] border-b border-[#3E3E42] p-5 flex items-center gap-4 z-40">
           <ImageWithFallback src={player.avatar} alt={player.name} className="w-14 h-14 rounded-md object-cover border border-[#3E3E42]" />
           <div className="flex-1 min-w-0">
             <div className="text-white text-xl tracking-tight">{player.name}</div>
@@ -162,7 +162,7 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
               <span className="flex items-center gap-1 cursor-pointer hover:text-white transition-colors"
                     onMouseEnter={() => setShowRatingBreakdown(true)}
                     onMouseLeave={() => setShowRatingBreakdown(false)}>
-                <span>Rating <strong className="text-[#89D185] tabular-nums">{player.rating.toFixed(1)}</strong></span>
+                <span>Rating <strong className="text-[#89D185] tabular-nums">{player.rating.toFixed(2)}</strong></span>
                 <Info className="w-3 h-3 text-[#4FC3F7]" />
               </span>
               <span>·</span>
@@ -189,7 +189,7 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
                   </div>
                   <div className="flex justify-between py-1 mt-2 font-bold text-white text-sm">
                     <span className="text-[#4FC3F7]">Sua Média Atual:</span>
-                    <span className="text-[#4FC3F7]">{player.rating.toFixed(1)}</span>
+                    <span className="text-[#4FC3F7]">{player.rating.toFixed(2)}</span>
                   </div>
                 </div>
               )}
@@ -277,7 +277,7 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
                         contentStyle={{ backgroundColor: '#252526', borderColor: '#3E3E42', color: '#D4D4D4' }}
                         itemStyle={{ color: '#007ACC' }}
                         labelFormatter={formatDate}
-                        formatter={(value: number | string) => [Number(value).toFixed(1), 'Nota']}
+                        formatter={(value: number | string) => [Number(value).toFixed(2), 'Nota']}
                       />
                       <Line type="monotone" dataKey="nota" stroke="#007ACC" strokeWidth={3} dot={{ fill: '#007ACC', r: 4 }} activeDot={{ r: 6, fill: '#4FC3F7' }} isAnimationActive={false} />
                     </LineChart>
@@ -291,27 +291,40 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
 
           <div>
             <div className="text-[11px] uppercase tracking-widest text-[#858585] mb-2">Estatísticas Avançadas</div>
-            <div className="rounded-md bg-[#1E1E1E] border border-[#3E3E42] px-4">
-              <AdvRow icon={Flame} label="Hat-Tricks (3+ gols/jogo)" value={`${a.hatTricks} marcados`} />
-              <AdvRow icon={Shield} label="Jogos sem sofrer gol" value={`${a.cleanSheets} clean sheets`} />
-              <AdvRow icon={Trophy} label="Maior Vitória" value={a.biggestWinScore} />
-              <AdvRow icon={TrendingDown} label="Maior Derrota" value={a.biggestLossScore} />
-              <AdvRow icon={Activity} label="Maior Sequência Invicto" value={`${a.maxUnbeatenStreak} jogos`} />
-              <AdvRow icon={Goal} label="Gols do Time (com ele)" value={`${a.totalTeamGoals} gols`} />
-              <AdvRow icon={AlertTriangle} label="Cartões Amarelos" value={`${a.yellowCards}`} />
-              <AdvRow icon={AlertOctagon} label="Cartões Vermelhos" value={`${a.redCards}`} />
-              <AdvRow icon={Frown} label="Gols Contra" value={`${a.ownGoals}`} />
-              <AdvRow icon={Handshake} label="Mais o Assistiu" value={a.topAssister.name} sub={`${a.topAssister.count} assist.`} />
-              <AdvRow icon={Dribbble} label="Mais Assistiu" value={a.topAssisted.name} sub={`${a.topAssisted.count} assist.`} />
-              <AdvRow icon={Users} label="Mais Jogou Junto" value={a.mostPlayedWith.name} sub={`${a.mostPlayedWith.count} jogos`} />
-              <AdvRow icon={ThumbsUp} label="Mais Venceu Junto" value={a.mostWinsWith.name} sub={`${a.mostWinsWith.count} vit.`} />
-              <AdvRow icon={ThumbsDown} label="Mais Perdeu Junto" value={a.mostLossesWith.name} sub={`${a.mostLossesWith.count} der.`} />
-              <AdvRow icon={Users} label="Mais Enfrentou" value={a.mostPlayedAgainst.name} sub={`${a.mostPlayedAgainst.count} jogos`} />
-              <AdvRow icon={Smile} label="Maior Freguês (Contra)" value={a.mostWinsAgainst.name} sub={`${a.mostWinsAgainst.count} vit.`} />
-              <AdvRow icon={Frown} label="Carrasco (Contra)" value={a.mostLossesAgainst.name} sub={`${a.mostLossesAgainst.count} der.`} />
-              <AdvRow icon={Scale} label="Rival Equilibrado" value={a.mostDrawsAgainst.name} sub={`${a.mostDrawsAgainst.count} emp.`} />
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              <AdvCard icon={Flame} label="Hat-Tricks" value={`${a.hatTricks} marcados`} />
+              <AdvCard icon={Shield} label="Sem sofrer gol" value={`${a.cleanSheets} jogos`} />
+              <AdvCard icon={Trophy} label="Maior Vitória" value={a.biggestWinScore} />
+              <AdvCard icon={TrendingDown} label="Maior Derrota" value={a.biggestLossScore} />
+              <AdvCard icon={Activity} label="Sequência Invicta" value={`${a.maxUnbeatenStreak} jogos`} />
+              <AdvCard icon={Goal} label="Gols do Time" value={`${a.totalTeamGoals} gols`} />
+              <AdvCard icon={AlertTriangle} label="Cartões Amarelos" value={`${a.yellowCards}`} />
+              <AdvCard icon={AlertOctagon} label="Cartões Vermelhos" value={`${a.redCards}`} />
+              <AdvCard icon={Frown} label="Gols Contra" value={`${a.ownGoals}`} />
+              <AdvCard icon={Handshake} label="Mais o Assistiu" value={a.topAssister.name} sub={`${a.topAssister.count} ass`} />
+              <AdvCard icon={Dribbble} label="Mais Assistiu" value={a.topAssisted.name} sub={`${a.topAssisted.count} ass`} />
+              <AdvCard icon={Users} label="Mais Jogou Junto" value={a.mostPlayedWith.name} sub={`${a.mostPlayedWith.count} j.`} />
+              <AdvCard icon={ThumbsUp} label="Mais Venceu Junto" value={a.mostWinsWith.name} sub={`${a.mostWinsWith.count} v.`} />
+              <AdvCard icon={ThumbsDown} label="Mais Perdeu Junto" value={a.mostLossesWith.name} sub={`${a.mostLossesWith.count} d.`} />
+              <AdvCard icon={Users} label="Mais Enfrentou" value={a.mostPlayedAgainst.name} sub={`${a.mostPlayedAgainst.count} j.`} />
+              <AdvCard icon={Smile} label="Maior Freguês" value={a.mostWinsAgainst.name} sub={`${a.mostWinsAgainst.count} v.`} />
+              <AdvCard icon={Frown} label="Carrasco (Contra)" value={a.mostLossesAgainst.name} sub={`${a.mostLossesAgainst.count} d.`} />
+              <AdvCard icon={Scale} label="Rival Equilibrado" value={a.mostDrawsAgainst.name} sub={`${a.mostDrawsAgainst.count} e.`} />
             </div>
           </div>
+
+          {player.gkStats && player.gkStats.games > 0 && (
+            <div>
+              <div className="text-[11px] uppercase tracking-widest text-[#858585] mb-2">Estatísticas de Goleiro</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                <AdvCard icon={Shield} label="Partidas" value={`${player.gkStats.games} jogos`} />
+                <AdvCard icon={Trophy} label="Vitórias" value={`${player.gkStats.wins} vitórias`} />
+                <AdvCard icon={Activity} label="Clean Sheets" value={`${player.gkStats.clean_sheets} jogos`} />
+                <AdvCard icon={TrendingDown} label="Gols Sofridos" value={`${player.gkStats.goals_conceded} gols`} />
+                <AdvCard icon={Activity} label="Média Sofridos" value={`${(player.gkStats.goals_conceded / player.gkStats.games).toFixed(2)} / jogo`} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
       
@@ -334,7 +347,7 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
                   <ImageWithFallback src={p.avatar} alt={p.name} className="w-8 h-8 rounded-md object-cover border border-[#3E3E42]" />
                   <div className="flex-1">
                     <div className="text-sm text-[#D4D4D4]">{p.name}</div>
-                    <div className="text-[10px] text-[#858585]">Rating: {p.rating.toFixed(1)}</div>
+                    <div className="text-[10px] text-[#858585]">Rating: {p.rating.toFixed(2)}</div>
                   </div>
                 </button>
               ))}

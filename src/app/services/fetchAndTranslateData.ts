@@ -44,6 +44,7 @@ export interface Player {
   losses: number;
   totalGames?: number;
   advanced?: PlayerAdvanced;
+  gkStats?: { games: number, wins: number, clean_sheets: number, goals_conceded: number };
   evolution_chart?: { date: string, nota: number }[];
 }
 
@@ -74,6 +75,8 @@ export interface Match {
   scoreB: number;
   redRoster: RosterPlayer[];
   whiteRoster: RosterPlayer[];
+  gkRed: RosterPlayer | null;
+  gkWhite: RosterPlayer | null;
   events: MatchEvent[];
 }
 
@@ -303,6 +306,12 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
       maxUnbeatenStreak: safeNumber(p.max_unbeaten),
       totalTeamGoals: safeNumber(p.total_team_goals),
     },
+    gkStats: p.gk_stats ? {
+      games: safeNumber(p.gk_stats.games),
+      wins: safeNumber(p.gk_stats.wins),
+      clean_sheets: safeNumber(p.gk_stats.clean_sheets),
+      goals_conceded: safeNumber(p.gk_stats.goals_conceded),
+    } : undefined,
     // We will build evolution_chart below dynamically.
     evolution_chart: [], 
   }));
@@ -481,6 +490,8 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
         scoreB: safeNumber(m.scoreWhite),
         redRoster: redIds,
         whiteRoster: whiteIds,
+        gkRed: gkRed ? getPlayerCache(playerIdFromObject(gkRed), safeString(gkRed.name)) : null,
+        gkWhite: gkWhite ? getPlayerCache(playerIdFromObject(gkWhite), safeString(gkWhite.name)) : null,
         events,
       });
     }

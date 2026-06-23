@@ -76,7 +76,7 @@ export function PlayerComparison({ playerA, playerB, onClose }: { playerA: Playe
       colorB = inverseObj ? "text-[#F48771]" : "text-[#89D185]";
     }
 
-    const fmt = (v: number) => Number.isInteger(v) ? v : v.toFixed(1);
+    const fmt = (v: number) => Number.isInteger(v) ? v : Number(v).toFixed(2);
 
     return (
       <div className="flex items-center justify-between py-2.5 border-b border-[#3E3E42]/50 last:border-0 text-sm">

@@ -6,7 +6,7 @@ import { useData } from "../DataContext";
 import { PlayerCard } from "./PlayerCard";
 import { Modal } from "./Modal";
 
-type Key = "ga" | "matches" | "goals" | "assists" | "wins" | "draws" | "losses" | "yellowCards" | "redCards" | "hatTricks" | "cards";
+type Key = "ga" | "matches" | "goals" | "assists" | "wins" | "draws" | "losses" | "yellowCards" | "redCards" | "hatTricks" | "cards" | "gkWins" | "gkCleanSheets" | "gkGoalsConcededAvg" | "mvpCount" | "formLast10";
 type Period = "season" | "month" | "year" | "custom" | "last";
 
 const cols: { key: Key; label: string; help: string }[] = [
@@ -19,17 +19,21 @@ const cols: { key: Key; label: string; help: string }[] = [
   { key: "losses", label: "D", help: "Derrotas" },
   { key: "cards", label: "C", help: "Cartões (Amarelos + Vermelhos)" },
   { key: "hatTricks", label: "HT", help: "Hat Tricks" },
+  { key: "mvpCount", label: "MVP", help: "Prêmios MVP" },
+  { key: "formLast10", label: "Forma", help: "Média das últimas 10 partidas" },
 ];
 
-type AggStats = { matches: number; goals: number; assists: number; wins: number; draws: number; losses: number; yellowCards: number; redCards: number; hatTricks: number };
+type AggStats = { matches: number; goals: number; assists: number; wins: number; draws: number; losses: number; yellowCards: number; redCards: number; hatTricks: number; gkGames: number; gkWins: number; gkCleanSheets: number; gkGoalsConceded: number; clutchGoals: number; };
 
 function emptyAgg(): AggStats {
-  return { matches: 0, goals: 0, assists: 0, wins: 0, draws: 0, losses: 0, yellowCards: 0, redCards: 0, hatTricks: 0 };
+  return { matches: 0, goals: 0, assists: 0, wins: 0, draws: 0, losses: 0, yellowCards: 0, redCards: 0, hatTricks: 0, gkGames: 0, gkWins: 0, gkCleanSheets: 0, gkGoalsConceded: 0, clutchGoals: 0 };
 }
 
 function val(p: Player & AggStats, k: Key): number {
   if (k === "ga") return p.goals + p.assists;
   if (k === "cards") return p.yellowCards + p.redCards;
+  if (k === "gkGoalsConcededAvg") return p.gkGames > 0 ? Number((p.gkGoalsConceded / p.gkGames).toFixed(2)) : 0;
+  if (k === "formLast10") return Number((p as any).formLast10?.toFixed(2) || 0);
   return (p as any)[k] as number;
 }
 
@@ -66,6 +70,12 @@ function aggregate(matches: Match[], from: Date | null, to: Date | null): Map<st
       if (ev.type === "goal" && ev.playerId) {
         get(ev.playerId).goals += 1;
         matchGoals.set(ev.playerId, (matchGoals.get(ev.playerId) ?? 0) + 1);
+        if (ev.time) {
+          const min = parseInt(ev.time.split(":")[0], 10);
+          if (!isNaN(min) && min >= 6) {
+            get(ev.playerId).clutchGoals += 1;
+          }
+        }
       }
       if (ev.type === "goal" && ev.assistId) get(ev.assistId).assists += 1;
       if (ev.type === "yellow_card" && ev.playerId) get(ev.playerId).yellowCards += 1;
@@ -74,6 +84,21 @@ function aggregate(matches: Match[], from: Date | null, to: Date | null): Map<st
     
     for (const [id, count] of matchGoals) {
       if (count >= 3) get(id).hatTricks += 1;
+    }
+
+    if (m.gkRed) {
+      const s = get(m.gkRed.id);
+      s.gkGames += 1;
+      if (redWin) s.gkWins += 1;
+      s.gkGoalsConceded += m.scoreB;
+      if (m.scoreB === 0) s.gkCleanSheets += 1;
+    }
+    if (m.gkWhite) {
+      const s = get(m.gkWhite.id);
+      s.gkGames += 1;
+      if (whiteWin) s.gkWins += 1;
+      s.gkGoalsConceded += m.scoreA;
+      if (m.scoreA === 0) s.gkCleanSheets += 1;
     }
   }
   return out;
@@ -88,6 +113,7 @@ export function PlayerStats() {
   const { data } = useData();
   const players = data?.players ?? [];
   const matches = data?.matches ?? [];
+  const monthlyMVPs = data?.monthlyMVPs ?? [];
   const [sortKey, setSortKey] = useState<Key>("ga");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [period, setPeriod] = useState<Period>("season");
@@ -125,6 +151,32 @@ export function PlayerStats() {
   }, [period, customFrom, customTo, matches]);
 
   const merged = useMemo<(Player & AggStats)[]>(() => {
+    const activeMatches = period === "season" ? matches : matches.filter(m => {
+      const t = new Date(m.date).getTime();
+      if (Number.isNaN(t)) return false;
+      if (range.from && t < range.from.getTime()) return false;
+      if (range.to && t > range.to.getTime()) return false;
+      return true;
+    });
+
+    const attachExtras = (p: Player) => {
+      const mvpCount = monthlyMVPs.filter(m => m.player === p.name).length;
+      const ratings = p.evolution_chart?.map(c => c.nota) || [];
+      const last10 = ratings.slice(-10);
+      const formLast10 = last10.length > 0 ? last10.reduce((a, b) => a + b, 0) / last10.length : p.rating;
+      
+      let clutchGoals = 0;
+      activeMatches.forEach(m => {
+        m.events.forEach(e => {
+          if (e.type === "goal" && e.playerId === p.id && e.time) {
+            const min = parseInt(e.time.split(":")[0], 10);
+            if (!isNaN(min) && min >= 6) clutchGoals++;
+          }
+        });
+      });
+      return { mvpCount, formLast10, clutchGoals };
+    };
+
     if (period === "season") {
       return players.map((p) => ({ 
         ...p, 
@@ -136,14 +188,19 @@ export function PlayerStats() {
         losses: p.losses,
         yellowCards: p.advanced?.yellowCards ?? 0,
         redCards: p.advanced?.redCards ?? 0,
-        hatTricks: p.advanced?.hatTricks ?? 0
-      }));
+        hatTricks: p.advanced?.hatTricks ?? 0,
+        gkGames: p.gkStats?.games ?? 0,
+        gkWins: p.gkStats?.wins ?? 0,
+        gkCleanSheets: p.gkStats?.clean_sheets ?? 0,
+        gkGoalsConceded: p.gkStats?.goals_conceded ?? 0,
+        ...attachExtras(p)
+      } as Player & AggStats & { mvpCount: number, formLast10: number, clutchGoals: number }));
     }
     const agg = aggregate(matches, range.from, range.to);
     return players
-      .map((p) => ({ ...p, ...(agg.get(p.id) ?? emptyAgg()) }))
+      .map((p) => ({ ...p, ...(agg.get(p.id) ?? emptyAgg()), ...attachExtras(p) }))
       .filter((p) => p.matches > 0);
-  }, [players, matches, range, period]);
+  }, [players, matches, range, period, monthlyMVPs]);
 
   const sorted = useMemo(() => {
     const arr = [...merged].sort((a, b) => {
@@ -155,8 +212,14 @@ export function PlayerStats() {
     return arr;
   }, [sortKey, sortDir, merged]);
 
-  const getTop = (key: Key) => {
-    return [...merged].sort((a, b) => val(b, key) - val(a, key)).slice(0, 3);
+  const getTop = (key: Key, asc = false, filterFn?: (p: Player & AggStats) => boolean) => {
+    let arr = [...merged];
+    if (filterFn) arr = arr.filter(filterFn);
+    return arr.sort((a, b) => {
+       const va = val(a, key);
+       const vb = val(b, key);
+       return asc ? va - vb : vb - va;
+    }).slice(0, 3);
   };
 
   const topGA = useMemo(() => getTop("ga"), [merged]);
@@ -165,6 +228,10 @@ export function PlayerStats() {
   const topMatches = useMemo(() => getTop("matches"), [merged]);
   const topCards = useMemo(() => getTop("cards"), [merged]);
   const topHatTricks = useMemo(() => getTop("hatTricks"), [merged]);
+
+  const topGkWins = useMemo(() => getTop("gkWins", false, p => p.gkGames > 0), [merged]);
+  const topGkClean = useMemo(() => getTop("gkCleanSheets", false, p => p.gkGames > 0), [merged]);
+  const topGkGoalsAvg = useMemo(() => getTop("gkGoalsConcededAvg", true, p => p.gkGames >= 3), [merged]);
 
   const onSort = (k: Key) => {
     if (sortKey === k) setSortDir(sortDir === "desc" ? "asc" : "desc");
@@ -213,6 +280,48 @@ export function PlayerStats() {
         <PodiumSection title="Hat Tricks" players={topHatTricks} onSelect={setSelected} label="HT" valueKey="hatTricks" onOpenViewAll={() => openViewAll("hatTricks", "Hat Tricks")} />
       </div>
 
+      {topGkWins.length > 0 && (
+        <div className="mt-8 border-t border-[#3E3E42] pt-8">
+          <h2 className="text-white tracking-tight text-xl mb-4">Goleiros (Pódios)</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <PodiumSection title="Mais Vitórias" players={topGkWins} onSelect={setSelected} label="Vitórias" valueKey="gkWins" onOpenViewAll={() => openViewAll("gkWins", "Vitórias (Goleiros)")} />
+            <PodiumSection title="Clean Sheets" players={topGkClean} onSelect={setSelected} label="Clean Sheets" valueKey="gkCleanSheets" onOpenViewAll={() => openViewAll("gkCleanSheets", "Clean Sheets")} />
+            <PodiumSection title="Gols Sofridos (Média)" players={topGkGoalsAvg} onSelect={setSelected} label="Gols/Jogo" valueKey="gkGoalsConcededAvg" onOpenViewAll={() => openViewAll("gkGoalsConcededAvg", "Média Gols Sofridos (Mín 3 J.)")} />
+          </div>
+        </div>
+      )}
+
+      <div className="mt-8 border-t border-[#3E3E42] pt-8">
+        <h2 className="text-white tracking-tight text-xl mb-4 flex items-center gap-2">
+          Clutch Performers <span className="text-xs font-normal text-[#858585]">(Gols marcados após os 6:00 min)</span>
+        </h2>
+        <div className="bg-[#1E1E1E] border border-[#3E3E42] rounded-md overflow-hidden max-w-lg">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[#858585] text-xs uppercase tracking-widest border-b border-[#3E3E42] bg-[#2D2D30]">
+                <th className="px-5 py-3 w-12">#</th>
+                <th className="py-3">Jogador</th>
+                <th className="px-5 py-3 text-right">Gols Clutch</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...merged].filter(p => p.clutchGoals > 0).sort((a, b) => b.clutchGoals - a.clutchGoals).slice(0, 10).map((p, i) => (
+                <tr key={p.id} className="border-b border-[#3E3E42] last:border-b-0 hover:bg-[#2A2D2E] transition">
+                  <td className="px-5 py-3 text-[#858585] tabular-nums">{i + 1}</td>
+                  <td className="py-3 text-white font-medium">{p.name}</td>
+                  <td className="px-5 py-3 text-right text-[#DCDCAA] font-bold tabular-nums">{p.clutchGoals}</td>
+                </tr>
+              ))}
+              {[...merged].filter(p => p.clutchGoals > 0).length === 0 && (
+                <tr>
+                  <td colSpan={3} className="px-5 py-6 text-center text-[#858585]">Nenhum gol clutch registrado neste período.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <Modal open={!!viewAllCategory} onClose={() => setViewAllCategory(null)} title={`Tabela: ${viewAllCategory?.title}`} size="xl">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -254,14 +363,15 @@ export function PlayerStats() {
                   {cols.map((c) => {
                     const v = val(p, c.key);
                     const isSorted = sortKey === c.key;
+                    const displayV = c.key === "formLast10" ? Number(v).toFixed(2) : v;
                     return (
                       <td key={c.key} className={`py-3 text-center tabular-nums ${isSorted ? "text-white" : "text-[#CCCCCC]"}`}>
-                        {v}
+                        {displayV}
                       </td>
                     );
                   })}
                   <td className="px-5 py-3 text-right">
-                    <span className="inline-block px-2.5 py-1 rounded bg-[#1E1E1E] border border-[#3E3E42] text-[#89D185] tabular-nums">{p.rating}</span>
+                    <span className="inline-block px-2.5 py-1 rounded bg-[#1E1E1E] border border-[#3E3E42] text-[#89D185] tabular-nums">{Number(p.rating).toFixed(2)}</span>
                   </td>
                 </tr>
               ))}
