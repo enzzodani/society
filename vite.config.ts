@@ -25,8 +25,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
-  // Importante para o GitHub Pages: Caminho base do repositório
-  base: '/society/',
+  // Importante: O Vercel usa a raiz ('/'), o GitHub Pages usa o nome do repositório ('/society/')
+  base: process.env.VERCEL ? '/' : '/society/',
   resolve: {
     alias: {
       // Cria o atalho '@' para apontar diretamente para a pasta 'src'
