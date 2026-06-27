@@ -40,6 +40,7 @@ export function Dashboard() {
   const matches = data?.matches ?? [];
   const sessions = data?.sessions ?? [];
   const nextMatch = data?.nextMatch ?? null;
+  const liveSession = (data as any)?.live_session ?? null;
 
   // 1. Lemos diretamente o MVP do mês anterior que o nosso tradutor calculou
   const currentMonthMVP = data?.lastMonthMVP ?? null;
@@ -75,6 +76,8 @@ export function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <LiveMatchTracker liveSession={liveSession} players={players} />
+
       <div className="rounded-md border border-[#3E3E42] bg-[#252526] p-8">
         <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#007ACC]/15 border border-[#007ACC]/40 text-[#4FC3F7] text-xs">
@@ -258,6 +261,86 @@ export function Dashboard() {
         )}
       </div>
       {showMvp && mvpPlayer && <PlayerCard player={mvpPlayer} onClose={() => setShowMvp(false)} />}
+    </div>
+  );
+}
+
+function LiveMatchTracker({ liveSession, players }: { liveSession: any; players: Player[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!liveSession || !liveSession.active_session) return null;
+
+  const getPlayerName = (id: string) => {
+    const p = players.find(x => x.id === id);
+    return p ? p.name : id;
+  };
+
+  return (
+    <div className="rounded-md border border-[#007ACC] bg-[#252526] p-6">
+       <div className="flex items-center justify-between">
+         <div className="flex items-center gap-3">
+           <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+           <h2 className="text-white text-xl font-bold tracking-tight">Pelada em Andamento</h2>
+         </div>
+         <button onClick={() => setExpanded(!expanded)} className="text-sm text-[#4FC3F7] hover:underline flex items-center gap-1">
+           {expanded ? "Ocultar Detalhes" : "Ver Detalhes"}
+           {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+         </button>
+       </div>
+
+       {expanded && (
+         <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+           <div className="rounded-md border border-[#3E3E42] bg-[#1E1E1E] p-4">
+             <div className="text-xs uppercase tracking-widest text-[#858585] mb-3">Em Campo</div>
+             <div className="grid grid-cols-2 gap-4">
+               <div>
+                 <div className="text-red-400 text-sm font-bold mb-2">Time Vermelho</div>
+                 <ul className="space-y-1">
+                   {liveSession.active_teams?.red?.map((id: string) => (
+                     <li key={id} className="text-sm text-[#D4D4D4] flex items-center gap-2">
+                       <span className="w-1 h-1 rounded-full bg-red-400" />
+                       {getPlayerName(id)}
+                     </li>
+                   ))}
+                 </ul>
+               </div>
+               <div>
+                 <div className="text-white text-sm font-bold mb-2">Time Branco</div>
+                 <ul className="space-y-1">
+                   {liveSession.active_teams?.white?.map((id: string) => (
+                     <li key={id} className="text-sm text-[#D4D4D4] flex items-center gap-2">
+                       <span className="w-1 h-1 rounded-full bg-white" />
+                       {getPlayerName(id)}
+                     </li>
+                   ))}
+                 </ul>
+               </div>
+             </div>
+           </div>
+
+           <div className="rounded-md border border-[#3E3E42] bg-[#1E1E1E] p-4">
+             <div className="text-xs uppercase tracking-widest text-[#858585] mb-3">Fila de Espera (Formato: {liveSession.mode_format})</div>
+             {liveSession.queues?.length > 0 ? (
+               <div className="space-y-3">
+                 {liveSession.queues.map((team: string[], idx: number) => (
+                   <div key={idx} className="p-2 rounded bg-[#252526] border border-[#3E3E42]">
+                     <div className="text-xs font-bold text-[#89D185] mb-1">Time {idx + 1}</div>
+                     <div className="flex flex-wrap gap-2">
+                       {team.map((id: string) => (
+                         <span key={id} className="text-xs text-[#CCCCCC] bg-[#2D2D30] px-2 py-1 rounded border border-[#3E3E42]">
+                           {getPlayerName(id)}
+                         </span>
+                       ))}
+                     </div>
+                   </div>
+                 ))}
+               </div>
+             ) : (
+               <div className="text-sm text-[#858585]">Nenhum jogador na fila.</div>
+             )}
+           </div>
+         </div>
+       )}
     </div>
   );
 }
