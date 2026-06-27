@@ -232,9 +232,9 @@ function Inner({ section, setSection }: { section: Section; setSection: (s: Sect
     <div className="dark min-h-screen bg-[#1E1E1E] text-[#D4D4D4]" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
       <div className="flex">
         <Sidebar active={section} onChange={(s) => { setSection(s); setMobileOpen(false); }} mobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} />
-        <main className="flex-1 min-w-0 w-full">
+        <main className="flex-1 min-w-0 w-full overflow-x-hidden">
           <Header onNavigate={setSection} onMenuToggle={() => setMobileOpen(true)} />
-          <div className="p-4 md:p-8 max-w-[1400px]">
+          <div className="p-4 md:p-8 max-w-[1400px] overflow-x-hidden">
             {section === "dashboard" && <Dashboard />}
             {section === "stats" && <PlayerStats />}
             {section === "history" && <Peladas />}

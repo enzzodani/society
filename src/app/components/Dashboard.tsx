@@ -322,11 +322,11 @@ function LiveMatchTracker({ liveSession, players }: { liveSession: any; players:
              <div className="text-xs uppercase tracking-widest text-[#858585] mb-3">Fila de Espera (Formato: {liveSession.mode_format})</div>
              {liveSession.queues?.length > 0 ? (
                <div className="space-y-3">
-                 {liveSession.queues.map((team: string[], idx: number) => (
+                 {liveSession.queues.map((team: any, idx: number) => (
                    <div key={idx} className="p-2 rounded bg-[#252526] border border-[#3E3E42]">
                      <div className="text-xs font-bold text-[#89D185] mb-1">Time {idx + 1}</div>
                      <div className="flex flex-wrap gap-2">
-                       {team.map((id: string) => (
+                       {(team.players || team).map((id: string) => (
                          <span key={id} className="text-xs text-[#CCCCCC] bg-[#2D2D30] px-2 py-1 rounded border border-[#3E3E42]">
                            {getPlayerName(id)}
                          </span>
