@@ -147,7 +147,7 @@ function SessionLeaderboard({ matches, ratingRules }: { matches: any[]; ratingRu
               <th className="px-4 py-2 w-8">#</th>
               <th className="py-2">Jogador</th>
               <th className="px-2 py-2 text-center" title="Partidas Jogadas">PJ</th>
-              <th className="px-2 py-2 text-center" title="Vitórias">V</th>
+              <th className="px-2 py-2 text-center" title="Vitórias/Empates/Derrotas">V/E/D</th>
               <th className="px-2 py-2 text-center" title="Gols">G</th>
               <th className="px-2 py-2 text-center" title="Assistências">A</th>
               <th className="px-4 py-2 text-center text-white" title="Gols + Assistências">G+A</th>
@@ -159,7 +159,13 @@ function SessionLeaderboard({ matches, ratingRules }: { matches: any[]; ratingRu
                 <td className="px-4 py-2 text-[#858585] tabular-nums">{i + 1}</td>
                 <td className="py-2 text-[#D4D4D4]">{p.name}</td>
                 <td className="px-2 py-2 text-center text-[#858585] tabular-nums">{p.matches}</td>
-                <td className="px-2 py-2 text-center text-[#89D185] tabular-nums">{p.wins}</td>
+                <td className="px-2 py-2 text-center tabular-nums text-xs">
+                  <span className="text-[#89D185]">{p.wins}</span>
+                  <span className="text-[#858585] mx-0.5">/</span>
+                  <span className="text-yellow-400">{p.draws}</span>
+                  <span className="text-[#858585] mx-0.5">/</span>
+                  <span className="text-red-400">{p.losses}</span>
+                </td>
                 <td className="px-2 py-2 text-center text-[#CCCCCC] tabular-nums">{p.goals}</td>
                 <td className="px-2 py-2 text-center text-[#CCCCCC] tabular-nums">{p.assists}</td>
                 <td className="px-4 py-2 text-center text-white font-bold tabular-nums">{p.ga}</td>

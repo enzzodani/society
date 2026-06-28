@@ -132,6 +132,13 @@ export interface RatingRules {
   own_goal: number;
 }
 
+export interface SeasonConfig {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+}
+
 export interface TranslatedData {
   groupName: string;
   groupId: string;
@@ -143,6 +150,7 @@ export interface TranslatedData {
   yearChampion: YearChampion | null;
   nextMatch: NextMatch | null;
   ratingRules?: RatingRules;
+  seasonsConfig: SeasonConfig[];
 }
 
 const TAG = "[fetchAndTranslateData]";
@@ -613,11 +621,19 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
     }
   }
 
+  const seasonsConfig: SeasonConfig[] = safeArray<any>(siteData.seasons_config).map(s => ({
+    id: safeString(s.id),
+    name: safeString(s.name),
+    startDate: safeString(s.startDate),
+    endDate: safeString(s.endDate),
+  }));
+
   console.log(
     `${TAG} concluído: `,
     `${playersAll.length} jogadores, `,
     `${matches.length} partidas, `,
-    `${sessions.length} sessões`
+    `${sessions.length} sessões, `,
+    `${seasonsConfig.length} temporadas`
   );
 
   return {
@@ -630,5 +646,6 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
     yearChampion,
     nextMatch,
     ratingRules: siteData.rating_rules,
+    seasonsConfig,
   };
 }

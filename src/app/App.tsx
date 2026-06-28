@@ -192,12 +192,15 @@ function ConfigScreen({ message }: { message?: string }) {
     <div className="dark min-h-screen bg-[#1E1E1E] text-[#D4D4D4] flex items-center justify-center p-6" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
       <div className="rounded-md border border-[#3E3E42] bg-[#252526] p-8 max-w-md w-full">
         <div className="flex items-center gap-2 mb-4">
-          <AlertTriangle className="w-5 h-5 text-[#DCDCAA]" />
-          <h1 className="text-white text-lg tracking-tight">Sem dados</h1>
+          <AlertTriangle className="w-5 h-5 text-[#F48771]" />
+          <h1 className="text-white text-lg tracking-tight">Erro ao Carregar Dados</h1>
         </div>
-        <p className="text-sm text-[#CCCCCC] mb-1">
-          {message || "Não foi possível carregar dados do Firestore."}
-        </p>
+        <div className="bg-[#1E1E1E] border border-[#F48771]/30 p-3 rounded-md mb-4">
+          <p className="text-[11px] uppercase tracking-widest text-[#F48771] font-bold mb-1">Motivo / Log de Erro:</p>
+          <p className="text-sm text-[#CCCCCC] break-words">
+            {message || "Falha de conexão com o Firebase Firestore. Verifique sua internet ou as regras de segurança."}
+          </p>
+        </div>
         <p className="text-xs text-[#858585] mb-5">
           Configure suas credenciais em <code className="text-[#4FC3F7]">src/app/firebase.ts</code> e informe o código de sincronização do seu grupo abaixo.
         </p>

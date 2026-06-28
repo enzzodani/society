@@ -70,30 +70,35 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
   const ga = player.goals + player.assists;
 
   let clutchGoals = 0;
-  let matchMvpCount = 0;
   data?.matches.forEach(m => {
+    let redScore = 0;
+    let whiteScore = 0;
+    const durationMin = parseInt(m.duration?.split(":")[0] || "7", 10);
+
     let maxGa = -1;
     let mvps: string[] = [];
     const goalsMap = new Map<string, number>();
     const assistsMap = new Map<string, number>();
     m.events.forEach(e => {
       if (e.type === "goal" && e.playerId) {
+        const isRed = m.redRoster?.some(r => r.id === e.playerId) || String(e.team).toLowerCase().includes("red") || String(e.team).toLowerCase().includes("vermelho");
+        const tied = redScore === whiteScore;
+        
+        if (isRed) redScore++; else whiteScore++;
+
         goalsMap.set(e.playerId, (goalsMap.get(e.playerId) || 0) + 1);
-        if (e.playerId === player.id && e.time) {
+        
+        if (e.playerId === player.id && tied && e.time) {
           const min = parseInt(e.time.split(":")[0], 10);
-          if (!isNaN(min) && min >= 6) clutchGoals++;
+          if (!isNaN(min) && min >= (durationMin - 1)) {
+            clutchGoals++;
+          }
         }
       }
-      if (e.type === "goal" && e.assistId) assistsMap.set(e.assistId, (assistsMap.get(e.assistId) || 0) + 1);
     });
-    const allIds = new Set([...goalsMap.keys(), ...assistsMap.keys()]);
-    allIds.forEach(id => {
-      const g = (goalsMap.get(id) || 0) + (assistsMap.get(id) || 0);
-      if (g > maxGa) { maxGa = g; mvps = [id]; }
-      else if (g === maxGa) { mvps.push(id); }
-    });
-    if (maxGa > 0 && mvps.includes(player.id)) matchMvpCount++;
   });
+  
+  const matchMvpCount = data?.sessions?.filter(s => s.mvpId === player.id).length || 0;
 
   // Radar Chart calculations matching Flutter's player_detail.dart
   const games = player.matches || 1;
@@ -319,7 +324,7 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
             <div className="text-[11px] uppercase tracking-widest text-[#858585] mb-2">Estatísticas Avançadas</div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               <AdvCard icon={Flame} label="Hat-Tricks" value={`${a.hatTricks} marcados`} />
-              <AdvCard icon={Goal} label="Gols Clutch" value={`${clutchGoals} marcados`} sub="Pós 6m" />
+              <AdvCard icon={Goal} label="Gols Decisivos" value={`${clutchGoals} marcados`} sub="Desempate (Último min)" />
               <AdvCard icon={Trophy} label="MVP da Pelada" value={`${matchMvpCount} vezes`} sub="Maior G+A" />
               <AdvCard icon={Shield} label="Sem sofrer gol" value={`${a.cleanSheets} jogos`} />
               <AdvCard icon={Trophy} label="Maior Vitória" value={a.biggestWinScore} />

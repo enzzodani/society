@@ -6,17 +6,15 @@ import { useData } from "../DataContext";
 import { PlayerCard } from "./PlayerCard";
 import { Modal } from "./Modal";
 
-type Key = "ga" | "matches" | "goals" | "assists" | "wins" | "draws" | "losses" | "yellowCards" | "redCards" | "hatTricks" | "cards" | "gkWins" | "gkCleanSheets" | "gkGoalsConcededAvg" | "mvpCount" | "formLast10";
-type Period = "season" | "month" | "year" | "custom" | "last";
+type Key = "ga" | "matches" | "goals" | "assists" | "ved" | "cards" | "hatTricks" | "gkWins" | "gkCleanSheets" | "gkGoalsConcededAvg" | "mvpCount" | "formLast10";
+type Period = "all" | "month" | "year" | "custom" | "last" | string;
 
 const cols: { key: Key; label: string; help: string }[] = [
   { key: "ga", label: "G+A", help: "Gols + Assistências" },
   { key: "matches", label: "PJ", help: "Partidas Jogadas" },
   { key: "goals", label: "G", help: "Gols" },
   { key: "assists", label: "A", help: "Assistências" },
-  { key: "wins", label: "V", help: "Vitórias" },
-  { key: "draws", label: "E", help: "Empates" },
-  { key: "losses", label: "D", help: "Derrotas" },
+  { key: "ved", label: "V/E/D", help: "Vitórias / Empates / Derrotas (Ordena por vitórias)" },
   { key: "cards", label: "C", help: "Cartões (Amarelos + Vermelhos)" },
   { key: "hatTricks", label: "HT", help: "Hat Tricks" },
   { key: "mvpCount", label: "MVP", help: "Prêmios MVP" },
@@ -34,6 +32,7 @@ function val(p: Player & AggStats, k: Key): number {
   if (k === "cards") return p.yellowCards + p.redCards;
   if (k === "gkGoalsConcededAvg") return p.gkGames > 0 ? Number((p.gkGoalsConceded / p.gkGames).toFixed(2)) : 0;
   if (k === "formLast10") return Number((p as any).formLast10?.toFixed(2) || 0);
+  if (k === "ved") return p.wins; // Sorting by V/E/D sorts by Wins by default
   return (p as any)[k] as number;
 }
 
@@ -50,7 +49,7 @@ function aggregate(matches: Match[], from: Date | null, to: Date | null): Map<st
     if (from && t < from.getTime()) continue;
     if (to && t > to.getTime()) continue;
 
-    const matchGoals = new Map<string, number>();
+    let matchGoals = new Map<string, number>();
 
     const redWin = m.scoreA > m.scoreB;
     const whiteWin = m.scoreB > m.scoreA;
@@ -70,12 +69,6 @@ function aggregate(matches: Match[], from: Date | null, to: Date | null): Map<st
       if (ev.type === "goal" && ev.playerId) {
         get(ev.playerId).goals += 1;
         matchGoals.set(ev.playerId, (matchGoals.get(ev.playerId) ?? 0) + 1);
-        if (ev.time) {
-          const min = parseInt(ev.time.split(":")[0], 10);
-          if (!isNaN(min) && min >= 6) {
-            get(ev.playerId).clutchGoals += 1;
-          }
-        }
       }
       if (ev.type === "goal" && ev.assistId) get(ev.assistId).assists += 1;
       if (ev.type === "yellow_card" && ev.playerId) get(ev.playerId).yellowCards += 1;
@@ -114,17 +107,30 @@ export function PlayerStats() {
   const { data } = useData();
   const players = data?.players ?? [];
   const matches = data?.matches ?? [];
+  const sessions = data?.sessions ?? [];
+  const seasonsConfig = data?.seasonsConfig ?? [];
   const monthlyMVPs = data?.monthlyMVPs ?? [];
   const [sortKey, setSortKey] = useState<Key>("ga");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [period, setPeriod] = useState<Period>("season");
+  
+  // Default to the first (latest) season if available, else 'all'
+  const defaultPeriod = seasonsConfig.length > 0 ? seasonsConfig[0].id : "all";
+  const [period, setPeriod] = useState<Period>(defaultPeriod);
   const [customFrom, setCustomFrom] = useState("2026-01-01");
   const [customTo, setCustomTo] = useState("2026-12-31");
   const [selected, setSelected] = useState<Player | null>(null);
   const [viewAllCategory, setViewAllCategory] = useState<{key: Key, title: string} | null>(null);
 
   const range = useMemo<{ from: Date | null; to: Date | null }>(() => {
-    if (period === "season") return { from: null, to: null };
+    if (period === "all") return { from: null, to: null };
+
+    const selectedSeason = seasonsConfig.find(s => s.id === period);
+    if (selectedSeason) {
+      return { 
+        from: new Date(selectedSeason.startDate), 
+        to: new Date(selectedSeason.endDate) 
+      };
+    }
 
     let refDate = new Date();
     if (matches.length > 0) {
@@ -149,10 +155,10 @@ export function PlayerStats() {
       from: new Date(fy, (fm || 1) - 1, fd || 1, 0, 0, 0, 0),
       to: new Date(ty, (tm || 1) - 1, td || 1, 23, 59, 59, 999),
     };
-  }, [period, customFrom, customTo, matches]);
+  }, [period, customFrom, customTo, matches, seasonsConfig]);
 
   const merged = useMemo<(Player & AggStats)[]>(() => {
-    const activeMatches = period === "season" ? matches : matches.filter(m => {
+    const activeMatches = period === "all" ? matches : matches.filter(m => {
       const t = new Date(m.date).getTime();
       if (Number.isNaN(t)) return false;
       if (range.from && t < range.from.getTime()) return false;
@@ -160,25 +166,47 @@ export function PlayerStats() {
       return true;
     });
 
+    const activeSessions = period === "all" ? sessions : sessions.filter(s => {
+      const t = new Date(s.timestamp).getTime();
+      if (Number.isNaN(t)) return false;
+      if (range.from && t < range.from.getTime()) return false;
+      if (range.to && t > range.to.getTime()) return false;
+      return true;
+    });
+
     const attachExtras = (p: Player) => {
-      const mvpCount = monthlyMVPs.filter(m => m.player === p.name).length;
+      const mvpCount = activeSessions.filter(s => s.mvpId === p.id).length;
       const ratings = p.evolution_chart?.map(c => c.nota) || [];
       const last10 = ratings.slice(-10);
       const formLast10 = last10.length > 0 ? last10.reduce((a, b) => a + b, 0) / last10.length : p.rating;
       
       let clutchGoals = 0;
       activeMatches.forEach(m => {
+        let redScore = 0;
+        let whiteScore = 0;
+        const durationMin = parseInt(m.duration?.split(":")[0] || "7", 10);
+        
         m.events.forEach(e => {
-          if (e.type === "goal" && e.playerId === p.id && e.time) {
-            const min = parseInt(e.time.split(":")[0], 10);
-            if (!isNaN(min) && min >= 6) clutchGoals++;
+          if (e.type === "goal" && e.playerId) {
+            const isRed = m.redRoster?.some(r => r.id === e.playerId) || String(e.team).toLowerCase().includes("red") || String(e.team).toLowerCase().includes("vermelho");
+            const tied = redScore === whiteScore;
+            
+            if (isRed) redScore++; else whiteScore++;
+
+            if (e.playerId === p.id && tied && e.time) {
+              const min = parseInt(e.time.split(":")[0], 10);
+              if (!isNaN(min) && min >= (durationMin - 1)) {
+                clutchGoals++;
+              }
+            }
           }
         });
       });
       return { mvpCount, formLast10, clutchGoals };
     };
 
-    if (period === "season") {
+    if (period === "all" && seasonsConfig.length === 0) {
+      // Se não há temporadas e for 'all', usa o comportamento anterior de não filtrar
       return players.map((p) => ({ 
         ...p, 
         matches: p.matches, 
@@ -202,7 +230,7 @@ export function PlayerStats() {
     return players
       .map((p) => ({ ...p, ...(agg.get(p.id) ?? emptyAgg()), ...attachExtras(p) }))
       .filter((p) => p.matches > 0);
-  }, [players, matches, range, period, monthlyMVPs]);
+  }, [players, matches, sessions, range, period]);
 
   const sorted = useMemo(() => {
     const arr = [...merged].sort((a, b) => {
@@ -281,7 +309,7 @@ export function PlayerStats() {
           <p className="text-[#858585] text-sm">Classificação geral, pódios e desempenho da turma</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <PeriodFilter value={period} onChange={setPeriod} />
+          <PeriodFilter value={period} onChange={setPeriod} seasons={seasonsConfig} />
         </div>
       </div>
 
@@ -307,7 +335,7 @@ export function PlayerStats() {
         <PodiumSection title="Mais Partidas Jogadas" players={topMatches} onSelect={setSelected} label="Partidas" valueKey="matches" onOpenViewAll={() => openViewAll("matches", "Partidas Jogadas")} />
         <PodiumSection title="Mais Cartões" players={topCards} onSelect={setSelected} label="Cartões" valueKey="cards" onOpenViewAll={() => openViewAll("cards", "Cartões Recebidos")} />
         <PodiumSection title="Hat Tricks" players={topHatTricks} onSelect={setSelected} label="HT" valueKey="hatTricks" onOpenViewAll={() => openViewAll("hatTricks", "Hat Tricks")} />
-        <PodiumSection title="Clutch Goals (Pós 6min)" players={topClutch} onSelect={setSelected} label="Clutch" valueKey="clutchGoals" onOpenViewAll={() => openViewAll("clutchGoals", "Gols Clutch")} />
+        <PodiumSection title="Gols Decisivos" subtitle="Gols de desempate no último minuto da partida" players={topClutch} onSelect={setSelected} label="Decisivos" valueKey="clutchGoals" onOpenViewAll={() => openViewAll("clutchGoals", "Gols Decisivos")} />
       </div>
 
       {topGkWins.length > 0 && (
@@ -480,8 +508,21 @@ export function PlayerStats() {
                     </div>
                   </td>
                   {cols.map((c) => {
-                    const v = val(p, c.key);
                     const isSorted = sortKey === c.key;
+                    
+                    if (c.key === "ved") {
+                      return (
+                        <td key={c.key} className={`py-3 text-center tabular-nums text-xs ${isSorted ? "bg-[#333333]" : ""}`}>
+                          <span className="text-[#89D185] font-semibold">{p.wins}</span>
+                          <span className="text-[#858585] mx-0.5">/</span>
+                          <span className="text-yellow-400 font-semibold">{p.draws}</span>
+                          <span className="text-[#858585] mx-0.5">/</span>
+                          <span className="text-[#F48771] font-semibold">{p.losses}</span>
+                        </td>
+                      );
+                    }
+                    
+                    const v = val(p, c.key);
                     const displayV = c.key === "formLast10" ? Number(v).toFixed(2) : v;
                     return (
                       <td key={c.key} className={`py-3 text-center tabular-nums ${isSorted ? "text-white" : "text-[#CCCCCC]"}`}>
@@ -504,17 +545,37 @@ export function PlayerStats() {
   );
 }
 
-function PeriodFilter({ value, onChange }: { value: Period; onChange: (p: Period) => void }) {
-  const opts: { id: Period; label: string }[] = [
+function PeriodFilter({ value, onChange, seasons }: { value: Period; onChange: (p: Period) => void; seasons: any[] }) {
+  const baseOpts: { id: Period; label: string }[] = [
     { id: "last", label: "Última Pelada" },
     { id: "month", label: "Mês" },
-    { id: "season", label: "Temporada" },
     { id: "year", label: "Ano" },
+    { id: "all", label: "Todo o Histórico" },
     { id: "custom", label: "Personalizado" },
   ];
+
   return (
-    <div className="flex items-center bg-[#1E1E1E] border border-[#3E3E42] rounded-md p-0.5">
-      {opts.map((o) => (
+    <div className="flex items-center bg-[#1E1E1E] border border-[#3E3E42] rounded-md p-0.5 flex-wrap">
+      {seasons.length > 0 && (
+        <select 
+          value={seasons.find(s => s.id === value) ? value : ""}
+          onChange={(e) => {
+            if (e.target.value) onChange(e.target.value);
+          }}
+          className="bg-transparent text-xs text-[#007ACC] font-bold px-2 py-1 outline-none cursor-pointer"
+        >
+          <option value="" disabled>Temporadas</option>
+          {seasons.map(s => (
+            <option key={s.id} value={s.id} className="bg-[#252526] text-[#D4D4D4]">
+              Temporada: {s.name}
+            </option>
+          ))}
+        </select>
+      )}
+      
+      {seasons.length > 0 && <div className="w-px h-4 bg-[#3E3E42] mx-1"></div>}
+      
+      {baseOpts.map((o) => (
         <button
           key={o.id}
           onClick={() => onChange(o.id)}
@@ -528,7 +589,8 @@ function PeriodFilter({ value, onChange }: { value: Period; onChange: (p: Period
 }
 
 function PodiumSection({ 
-  title, 
+  title,
+  subtitle,
   players, 
   onSelect, 
   label, 
@@ -536,6 +598,7 @@ function PodiumSection({
   onOpenViewAll
 }: { 
   title: string;
+  subtitle?: string;
   players: (Player & AggStats)[]; 
   onSelect: (p: Player) => void;
   label: string;
@@ -544,8 +607,9 @@ function PodiumSection({
 }) {
   return (
     <div className="rounded-md border border-[#3E3E42] bg-[#252526] flex flex-col">
-      <div className="p-4 border-b border-[#3E3E42] flex items-center justify-between">
+      <div className="p-4 border-b border-[#3E3E42]">
         <h2 className="text-white tracking-tight text-lg">{title}</h2>
+        {subtitle && <p className="text-[11px] text-[#858585] mt-1 leading-snug">{subtitle}</p>}
       </div>
       <div className="p-6 flex-1">
         <Podium players={players} onSelect={onSelect} label={label} valueKey={valueKey} />
