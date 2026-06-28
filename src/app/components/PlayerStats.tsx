@@ -23,10 +23,10 @@ const cols: { key: Key; label: string; help: string }[] = [
   { key: "formLast10", label: "Forma", help: "Média das últimas 10 partidas" },
 ];
 
-type AggStats = { matches: number; goals: number; assists: number; wins: number; draws: number; losses: number; yellowCards: number; redCards: number; hatTricks: number; gkGames: number; gkWins: number; gkCleanSheets: number; gkGoalsConceded: number; clutchGoals: number; };
+type AggStats = { matches: number; goals: number; assists: number; wins: number; draws: number; losses: number; yellowCards: number; redCards: number; hatTricks: number; gkGames: number; gkWins: number; gkCleanSheets: number; gkGoalsConceded: number; clutchGoals: number; ownGoals: number; };
 
 function emptyAgg(): AggStats {
-  return { matches: 0, goals: 0, assists: 0, wins: 0, draws: 0, losses: 0, yellowCards: 0, redCards: 0, hatTricks: 0, gkGames: 0, gkWins: 0, gkCleanSheets: 0, gkGoalsConceded: 0, clutchGoals: 0 };
+  return { matches: 0, goals: 0, assists: 0, wins: 0, draws: 0, losses: 0, yellowCards: 0, redCards: 0, hatTricks: 0, gkGames: 0, gkWins: 0, gkCleanSheets: 0, gkGoalsConceded: 0, clutchGoals: 0, ownGoals: 0 };
 }
 
 function val(p: Player & AggStats, k: Key): number {
@@ -80,6 +80,7 @@ function aggregate(matches: Match[], from: Date | null, to: Date | null): Map<st
       if (ev.type === "goal" && ev.assistId) get(ev.assistId).assists += 1;
       if (ev.type === "yellow_card" && ev.playerId) get(ev.playerId).yellowCards += 1;
       if (ev.type === "red_card" && ev.playerId) get(ev.playerId).redCards += 1;
+      if (ev.type === "own_goal" && ev.playerId) get(ev.playerId).ownGoals += 1;
     }
     
     for (const [id, count] of matchGoals) {
@@ -193,6 +194,7 @@ export function PlayerStats() {
         gkWins: p.gkStats?.wins ?? 0,
         gkCleanSheets: p.gkStats?.clean_sheets ?? 0,
         gkGoalsConceded: p.gkStats?.goals_conceded ?? 0,
+        ownGoals: p.advanced?.ownGoals ?? p.own_goals ?? 0,
         ...attachExtras(p)
       } as Player & AggStats & { mvpCount: number, formLast10: number, clutchGoals: number }));
     }
@@ -228,10 +230,37 @@ export function PlayerStats() {
   const topMatches = useMemo(() => getTop("matches"), [merged]);
   const topCards = useMemo(() => getTop("cards"), [merged]);
   const topHatTricks = useMemo(() => getTop("hatTricks"), [merged]);
+  const topClutch = useMemo(() => getTop("clutchGoals"), [merged]);
 
   const topGkWins = useMemo(() => getTop("gkWins", false, p => p.gkGames > 0), [merged]);
   const topGkClean = useMemo(() => getTop("gkCleanSheets", false, p => p.gkGames > 0), [merged]);
   const topGkGoalsAvg = useMemo(() => getTop("gkGoalsConcededAvg", true, p => p.gkGames >= 3), [merged]);
+
+  const dynamicDuos = useMemo(() => {
+    const playersMap = new Map(players.map(p => [p.id, p]));
+    const duos = new Map<string, number>();
+    const activeMatches = period === "season" ? matches : matches.filter(m => {
+      const t = new Date(m.date).getTime();
+      return !Number.isNaN(t) && (!range.from || t >= range.from.getTime()) && (!range.to || t <= range.to.getTime());
+    });
+
+    for (const m of activeMatches) {
+      for (const ev of m.events) {
+        if (ev.type === "goal" && ev.playerId && ev.assistId && ev.playerId !== ev.assistId) {
+          const id1 = ev.playerId < ev.assistId ? ev.playerId : ev.assistId;
+          const id2 = ev.playerId < ev.assistId ? ev.assistId : ev.playerId;
+          const key = `${id1}|${id2}`;
+          duos.set(key, (duos.get(key) ?? 0) + 1);
+        }
+      }
+    }
+
+    const arr = Array.from(duos.entries()).map(([key, count]) => {
+      const [id1, id2] = key.split("|");
+      return { p1Name: playersMap.get(id1)?.name ?? id1, p2Name: playersMap.get(id2)?.name ?? id2, count };
+    });
+    return arr.sort((a, b) => b.count - a.count).slice(0, 5);
+  }, [matches, range, period, players]);
 
   const onSort = (k: Key) => {
     if (sortKey === k) setSortDir(sortDir === "desc" ? "asc" : "desc");
@@ -278,6 +307,7 @@ export function PlayerStats() {
         <PodiumSection title="Mais Partidas Jogadas" players={topMatches} onSelect={setSelected} label="Partidas" valueKey="matches" onOpenViewAll={() => openViewAll("matches", "Partidas Jogadas")} />
         <PodiumSection title="Mais Cartões" players={topCards} onSelect={setSelected} label="Cartões" valueKey="cards" onOpenViewAll={() => openViewAll("cards", "Cartões Recebidos")} />
         <PodiumSection title="Hat Tricks" players={topHatTricks} onSelect={setSelected} label="HT" valueKey="hatTricks" onOpenViewAll={() => openViewAll("hatTricks", "Hat Tricks")} />
+        <PodiumSection title="Clutch Goals (Pós 6min)" players={topClutch} onSelect={setSelected} label="Clutch" valueKey="clutchGoals" onOpenViewAll={() => openViewAll("clutchGoals", "Gols Clutch")} />
       </div>
 
       {topGkWins.length > 0 && (
@@ -291,34 +321,123 @@ export function PlayerStats() {
         </div>
       )}
 
-      <div className="mt-8 border-t border-[#3E3E42] pt-8">
-        <h2 className="text-white tracking-tight text-xl mb-4 flex items-center gap-2">
-          Clutch Performers <span className="text-xs font-normal text-[#858585]">(Gols marcados após os 6:00 min)</span>
-        </h2>
-        <div className="bg-[#1E1E1E] border border-[#3E3E42] rounded-md overflow-hidden max-w-lg">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[#858585] text-xs uppercase tracking-widest border-b border-[#3E3E42] bg-[#2D2D30]">
-                <th className="px-5 py-3 w-12">#</th>
-                <th className="py-3">Jogador</th>
-                <th className="px-5 py-3 text-right">Gols Clutch</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...merged].filter(p => p.clutchGoals > 0).sort((a, b) => b.clutchGoals - a.clutchGoals).slice(0, 10).map((p, i) => (
-                <tr key={p.id} className="border-b border-[#3E3E42] last:border-b-0 hover:bg-[#2A2D2E] transition">
-                  <td className="px-5 py-3 text-[#858585] tabular-nums">{i + 1}</td>
-                  <td className="py-3 text-white font-medium">{p.name}</td>
-                  <td className="px-5 py-3 text-right text-[#DCDCAA] font-bold tabular-nums">{p.clutchGoals}</td>
+      <div className="mt-8 border-t border-[#3E3E42] pt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div>
+          <h2 className="text-white tracking-tight text-xl mb-4 flex items-center gap-2">
+            ⛔ Quadro de Gols Contra
+          </h2>
+          <div className="bg-[#1E1E1E] border border-[#3E3E42] rounded-md overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[#858585] text-xs uppercase tracking-widest border-b border-[#3E3E42] bg-[#2D2D30]">
+                  <th className="px-4 py-3 w-10">#</th>
+                  <th className="py-3">Jogador</th>
+                  <th className="px-4 py-3 text-right">Gols Contra</th>
                 </tr>
-              ))}
-              {[...merged].filter(p => p.clutchGoals > 0).length === 0 && (
-                <tr>
-                  <td colSpan={3} className="px-5 py-6 text-center text-[#858585]">Nenhum gol clutch registrado neste período.</td>
+              </thead>
+              <tbody>
+                {[...merged].filter(p => p.ownGoals > 0).sort((a, b) => b.ownGoals - a.ownGoals).slice(0, 5).map((p, i) => (
+                  <tr key={p.id} className="border-b border-[#3E3E42] last:border-b-0 hover:bg-[#2A2D2E] transition">
+                    <td className="px-4 py-3 text-[#858585] tabular-nums font-bold" style={{ color: i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : "" }}>{i + 1}</td>
+                    <td className="py-3 text-white">{p.name}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{p.ownGoals}</td>
+                  </tr>
+                ))}
+                {[...merged].filter(p => p.ownGoals > 0).length === 0 && (
+                  <tr><td colSpan={3} className="px-4 py-6 text-center text-[#858585]">Nenhum gol contra registrado.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-white tracking-tight text-xl mb-4 flex items-center gap-2">
+            ⭐ Nota média recebida (escala 0-10)
+          </h2>
+          <div className="bg-[#1E1E1E] border border-[#3E3E42] rounded-md overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[#858585] text-xs uppercase tracking-widest border-b border-[#3E3E42] bg-[#2D2D30]">
+                  <th className="px-4 py-3 w-10">#</th>
+                  <th className="py-3">Jogador</th>
+                  <th className="px-4 py-3 text-right">Média</th>
+                  <th className="px-4 py-3 text-right">Partidas</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {[...merged].filter(p => p.matches >= 5).sort((a, b) => b.formLast10 - a.formLast10).slice(0, 5).map((p, i) => (
+                  <tr key={p.id} className="border-b border-[#3E3E42] last:border-b-0 hover:bg-[#2A2D2E] transition">
+                    <td className="px-4 py-3 text-[#858585] tabular-nums font-bold" style={{ color: i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : "" }}>{i + 1}</td>
+                    <td className="py-3 text-white">{p.name}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{p.formLast10.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-[#858585]">{p.matches}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-white tracking-tight text-xl mb-4 flex items-center gap-2">
+            🏅 Taxa de Vitórias <span className="text-xs font-normal text-[#858585]">(mín. 10 partidas)</span>
+          </h2>
+          <div className="bg-[#1E1E1E] border border-[#3E3E42] rounded-md overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[#858585] text-xs uppercase tracking-widest border-b border-[#3E3E42] bg-[#2D2D30]">
+                  <th className="px-4 py-3 w-10">#</th>
+                  <th className="py-3">Jogador</th>
+                  <th className="px-4 py-3 text-right">Win %</th>
+                  <th className="px-4 py-3 text-right">Vitórias</th>
+                  <th className="px-4 py-3 text-right">Partidas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...merged].filter(p => p.matches >= 10).sort((a, b) => (b.wins / b.matches) - (a.wins / a.matches)).slice(0, 5).map((p, i) => (
+                  <tr key={p.id} className="border-b border-[#3E3E42] last:border-b-0 hover:bg-[#2A2D2E] transition">
+                    <td className="px-4 py-3 text-[#858585] tabular-nums font-bold" style={{ color: i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : "" }}>{i + 1}</td>
+                    <td className="py-3 text-white">{p.name}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-[#89D185]">{((p.wins / p.matches) * 100).toFixed(1)}%</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{p.wins}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-[#858585]">{p.matches}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-white tracking-tight text-xl mb-4 flex items-center gap-2">
+            🤝 Duplas Dinâmicas <span className="text-xs font-normal text-[#858585]">(Gols em parceria)</span>
+          </h2>
+          <div className="bg-[#1E1E1E] border border-[#3E3E42] rounded-md overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[#858585] text-xs uppercase tracking-widest border-b border-[#3E3E42] bg-[#2D2D30]">
+                  <th className="px-4 py-3 w-10">#</th>
+                  <th className="py-3">Jogador 1</th>
+                  <th className="py-3">Jogador 2</th>
+                  <th className="px-4 py-3 text-right">Gols</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dynamicDuos.map((d, i) => (
+                  <tr key={i} className="border-b border-[#3E3E42] last:border-b-0 hover:bg-[#2A2D2E] transition">
+                    <td className="px-4 py-3 text-[#858585] tabular-nums font-bold" style={{ color: i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : "" }}>{i + 1}</td>
+                    <td className="py-3 text-white">{d.p1Name}</td>
+                    <td className="py-3 text-white">{d.p2Name}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{d.count}</td>
+                  </tr>
+                ))}
+                {dynamicDuos.length === 0 && (
+                  <tr><td colSpan={4} className="px-4 py-6 text-center text-[#858585]">Nenhuma parceria registrada.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

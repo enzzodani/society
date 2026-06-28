@@ -69,6 +69,32 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
   const a = player.advanced ?? EMPTY_ADV;
   const ga = player.goals + player.assists;
 
+  let clutchGoals = 0;
+  let matchMvpCount = 0;
+  data?.matches.forEach(m => {
+    let maxGa = -1;
+    let mvps: string[] = [];
+    const goalsMap = new Map<string, number>();
+    const assistsMap = new Map<string, number>();
+    m.events.forEach(e => {
+      if (e.type === "goal" && e.playerId) {
+        goalsMap.set(e.playerId, (goalsMap.get(e.playerId) || 0) + 1);
+        if (e.playerId === player.id && e.time) {
+          const min = parseInt(e.time.split(":")[0], 10);
+          if (!isNaN(min) && min >= 6) clutchGoals++;
+        }
+      }
+      if (e.type === "goal" && e.assistId) assistsMap.set(e.assistId, (assistsMap.get(e.assistId) || 0) + 1);
+    });
+    const allIds = new Set([...goalsMap.keys(), ...assistsMap.keys()]);
+    allIds.forEach(id => {
+      const g = (goalsMap.get(id) || 0) + (assistsMap.get(id) || 0);
+      if (g > maxGa) { maxGa = g; mvps = [id]; }
+      else if (g === maxGa) { mvps.push(id); }
+    });
+    if (maxGa > 0 && mvps.includes(player.id)) matchMvpCount++;
+  });
+
   // Radar Chart calculations matching Flutter's player_detail.dart
   const games = player.matches || 1;
   const attackScore = Math.min(100, (player.goals / games) * 100);
@@ -293,6 +319,8 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
             <div className="text-[11px] uppercase tracking-widest text-[#858585] mb-2">Estatísticas Avançadas</div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               <AdvCard icon={Flame} label="Hat-Tricks" value={`${a.hatTricks} marcados`} />
+              <AdvCard icon={Goal} label="Gols Clutch" value={`${clutchGoals} marcados`} sub="Pós 6m" />
+              <AdvCard icon={Trophy} label="MVP da Pelada" value={`${matchMvpCount} vezes`} sub="Maior G+A" />
               <AdvCard icon={Shield} label="Sem sofrer gol" value={`${a.cleanSheets} jogos`} />
               <AdvCard icon={Trophy} label="Maior Vitória" value={a.biggestWinScore} />
               <AdvCard icon={TrendingDown} label="Maior Derrota" value={a.biggestLossScore} />
