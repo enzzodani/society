@@ -61,7 +61,10 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
   const rules = data?.ratingRules;
   const [showRatingBreakdown, setShowRatingBreakdown] = useState(false);
   const [showRadarInfo, setShowRadarInfo] = useState(false);
-  const [evolutionFilter, setEvolutionFilter] = useState<'all' | 'last10' | 'months'>('last10');
+  const [evolutionFilter, setEvolutionFilter] = useState<string>('last');
+  const [customFrom, setCustomFrom] = useState("2026-01-01");
+  const [customTo, setCustomTo] = useState("2026-12-31");
+  const [activeTab, setActiveTab] = useState<'rating' | 'form'>('rating');
   const [showSelector, setShowSelector] = useState(false);
   const [comparingWith, setComparingWith] = useState<Player | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -140,6 +143,70 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
     return dateStr;
   };
 
+  const activePeriodRanges = useMemo(() => {
+    if (evolutionFilter === "all") return null;
+
+    const selectedSeason = data?.seasonsConfig?.find(s => s.id === evolutionFilter);
+    if (selectedSeason && data?.seasonsConfig) {
+      const mainTo = new Date(selectedSeason.endDate);
+      mainTo.setHours(23, 59, 59, 999);
+      const ranges = [{
+        from: new Date(selectedSeason.startDate),
+        to: mainTo
+      }];
+      const preSeasons = data.seasonsConfig.filter(s => s.isPreSeason && s.parentSeasonId === selectedSeason.id);
+      for (const ps of preSeasons) {
+        const psTo = new Date(ps.endDate);
+        psTo.setHours(23, 59, 59, 999);
+        ranges.push({
+          from: new Date(ps.startDate),
+          to: psTo
+        });
+      }
+      return ranges;
+    }
+
+    let refDate = new Date();
+    if (data?.matches && data.matches.length > 0) {
+      const latestMatchTime = Math.max(...data.matches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t)));
+      if (latestMatchTime > 0) {
+        refDate = new Date(latestMatchTime);
+      }
+    }
+
+    if (evolutionFilter === "last") {
+      return [{ 
+        from: new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 0, 0, 0, 0),
+        to: new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 23, 59, 59, 999)
+      }];
+    }
+    
+    if (evolutionFilter === "month") {
+      return [{ 
+        from: new Date(refDate.getFullYear(), refDate.getMonth(), 1, 0, 0, 0, 0), 
+        to: new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0, 23, 59, 59, 999) 
+      }];
+    }
+    
+    if (evolutionFilter === "year") {
+      return [{ 
+        from: new Date(refDate.getFullYear(), 0, 1, 0, 0, 0, 0), 
+        to: new Date(refDate.getFullYear(), 11, 31, 23, 59, 59, 999) 
+      }];
+    }
+
+    if (evolutionFilter === "custom") {
+      const [fy, fm, fd] = customFrom.split("-").map(Number);
+      const [ty, tm, td] = customTo.split("-").map(Number);
+      return [{
+        from: new Date(fy, (fm || 1) - 1, fd || 1, 0, 0, 0, 0),
+        to: new Date(ty, (tm || 1) - 1, td || 1, 23, 59, 59, 999),
+      }];
+    }
+    
+    return null;
+  }, [evolutionFilter, data?.seasonsConfig, data?.matches, customFrom, customTo]);
+
   // Evolution Chart Logic
   const evolutionChartData = useMemo(() => {
     const rawChart: {date: string, nota: number}[] = (player as any).evolution_chart || [];
@@ -153,28 +220,175 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
       };
     });
     
-    if (evolutionFilter === 'all') {
+    if (!activePeriodRanges) {
       return processedChart;
-    } else if (evolutionFilter === 'last10') {
-      return processedChart.slice(-10);
-    } else if (evolutionFilter === 'months') {
-      const monthly: Record<string, { sum: number, count: number }> = {};
-      processedChart.forEach(item => {
-        const dateString = item.rawDate || item.date || "";
-        const month = dateString.substring(0, 7); // YYYY-MM
-        if (!monthly[month]) monthly[month] = { sum: 0, count: 0 };
-        monthly[month].sum += item.nota;
-        monthly[month].count += 1;
-      });
-      const sortedMonths = Object.keys(monthly).sort();
-      const last12 = sortedMonths.slice(-12);
-      return last12.map(m => ({
-        date: m,
-        nota: Number((monthly[m].sum / monthly[m].count).toFixed(1))
-      }));
     }
-    return processedChart;
-  }, [player, evolutionFilter, data?.matches]);
+    
+    return processedChart.filter(item => {
+      const t = new Date(item.rawDate).getTime();
+      if (isNaN(t)) return true; // keep items without a proper date parse
+      return activePeriodRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
+    });
+  }, [player, evolutionFilter, activePeriodRanges]);
+
+  // Form Chart Logic (Goals, Assists, G+A over time)
+  const formChartData = useMemo(() => {
+    const chartData: {date: string, rawDate: string, goals: number, assists: number, ga: number}[] = [];
+    if (!data?.matches) return chartData;
+    
+    // Get matches chronologically
+    const sortedMatches = [...data.matches].sort((m1, m2) => {
+       const t1 = new Date(m1.date).getTime();
+       const t2 = new Date(m2.date).getTime();
+       return t1 - t2;
+    });
+
+    const grouped: Record<string, { rawDate: string, goals: number, assists: number }> = {};
+
+    for (const m of sortedMatches) {
+      const isRed = m.redRoster?.some(r => r.id === player.id) || m.gkRed?.id === player.id;
+      const isWhite = m.whiteRoster?.some(r => r.id === player.id) || m.gkWhite?.id === player.id;
+      if (!isRed && !isWhite) continue;
+
+      let g = 0; let a = 0;
+      for (const ev of m.events) {
+        if (ev.type === 'goal') {
+          if (ev.playerId === player.id) g++;
+          if (ev.assistId === player.id) a++;
+        }
+      }
+      
+      const sessionDate = formatDate(m.date);
+      if (!grouped[sessionDate]) {
+        grouped[sessionDate] = { rawDate: m.date, goals: 0, assists: 0 };
+      }
+      grouped[sessionDate].goals += g;
+      grouped[sessionDate].assists += a;
+    }
+    
+    for (const [date, stats] of Object.entries(grouped)) {
+      chartData.push({
+        date,
+        rawDate: stats.rawDate,
+        goals: stats.goals,
+        assists: stats.assists,
+        ga: stats.goals + stats.assists
+      });
+    }
+
+    if (!activePeriodRanges) {
+       return chartData;
+    }
+    
+    return chartData.filter(item => {
+      const t = new Date(item.rawDate).getTime();
+      if (isNaN(t)) return true;
+      return activePeriodRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
+    });
+  }, [data?.matches, player.id, evolutionFilter, activePeriodRanges]);
+
+  const dynamicStats = useMemo(() => {
+    let statGa = 0, statGoals = 0, statAssists = 0, statWins = 0, statDraws = 0, statLosses = 0;
+    
+    if (evolutionFilter === 'all') {
+      return {
+         ga: player.goals + player.assists,
+         goals: player.goals,
+         assists: player.assists,
+         wins: player.wins,
+         draws: player.draws,
+         losses: player.losses,
+      };
+    }
+
+    if (!data?.matches) return { ga: 0, goals: 0, assists: 0, wins: 0, draws: 0, losses: 0 };
+
+    const playerMatches = data.matches.filter(m => {
+      const isRed = m.redRoster?.some(r => r.id === player.id) || m.gkRed?.id === player.id;
+      const isWhite = m.whiteRoster?.some(r => r.id === player.id) || m.gkWhite?.id === player.id;
+      return isRed || isWhite;
+    }).sort((m1, m2) => new Date(m1.date).getTime() - new Date(m2.date).getTime());
+
+    let filteredMatches = playerMatches;
+
+    if (activePeriodRanges) {
+      filteredMatches = playerMatches.filter(m => {
+         const t = new Date(m.date).getTime();
+         if (isNaN(t)) return true;
+         return activePeriodRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
+      });
+    }
+
+    let matchCount = 0;
+
+    for (const m of filteredMatches) {
+      const isRed = m.redRoster?.some(r => r.id === player.id) || m.gkRed?.id === player.id;
+      const isWhite = m.whiteRoster?.some(r => r.id === player.id) || m.gkWhite?.id === player.id;
+
+      if (isRed || isWhite) matchCount++;
+
+      let matchGoals = 0;
+      let matchAssists = 0;
+      for (const ev of m.events) {
+        if (ev.type === 'goal') {
+          if (ev.playerId === player.id) matchGoals++;
+          if (ev.assistId === player.id) matchAssists++;
+        }
+      }
+
+      statGoals += matchGoals;
+      statAssists += matchAssists;
+      statGa += (matchGoals + matchAssists);
+
+      const redWin = m.scoreA > m.scoreB;
+      const whiteWin = m.scoreB > m.scoreA;
+      if ((isRed && redWin) || (isWhite && whiteWin)) statWins++;
+      else if (!redWin && !whiteWin) statDraws++;
+      else statLosses++;
+    }
+
+    return { matches: matchCount, ga: statGa, goals: statGoals, assists: statAssists, wins: statWins, draws: statDraws, losses: statLosses };
+  }, [data?.matches, player, evolutionFilter, activePeriodRanges]);
+
+  const dynamicRating = useMemo(() => {
+    if (evolutionFilter === 'all') return player.rating;
+    
+    const rawChart: {date: string, nota: number, rawDate: string}[] = (player as any).evolution_chart || [];
+    if (rawChart.length > 0 && activePeriodRanges) {
+        const periodChart = rawChart.filter(c => {
+          const t = new Date(c.rawDate || c.date).getTime();
+          if (Number.isNaN(t)) return false;
+          return activePeriodRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
+        }).sort((a, b) => new Date(a.rawDate || a.date).getTime() - new Date(b.rawDate || b.date).getTime());
+        
+        if (periodChart.length > 0) {
+          return periodChart[periodChart.length - 1].nota;
+        }
+    }
+    // Retorna a base ou 6.5 caso não tenha jogado na temporada
+    return rules?.base ?? 6.5;
+  }, [player, evolutionFilter, activePeriodRanges, rules]);
+
+  // Achievements / Badges Logic
+  const badges = useMemo(() => {
+    const list = [];
+    if (player.goals >= 50) list.push({ icon: Flame, name: "Artilheiro Ouro", desc: "50+ Gols", color: "#FFD700" });
+    else if (player.goals >= 20) list.push({ icon: Flame, name: "Artilheiro Prata", desc: "20+ Gols", color: "#C0C0C0" });
+    
+    if (player.assists >= 30) list.push({ icon: Handshake, name: "Garçom Mestre", desc: "30+ Assis.", color: "#4FC3F7" });
+    
+    if (matchMvpCount >= 5) list.push({ icon: Trophy, name: "Rei da Pelada", desc: "5+ MVPs", color: "#FFD700" });
+    else if (matchMvpCount >= 2) list.push({ icon: Trophy, name: "MVP", desc: "2+ MVPs", color: "#CD7F32" });
+
+    if (a.hatTricks >= 3) list.push({ icon: Goal, name: "Goleador Nato", desc: "3+ Hat-Tricks", color: "#89D185" });
+    if (clutchGoals >= 2) list.push({ icon: Activity, name: "Clutch", desc: "2+ Gols Decisivos", color: "#F48771" });
+    
+    if (player.gkStats && player.gkStats.clean_sheets >= 5) list.push({ icon: Shield, name: "Paredão", desc: "5+ Clean Sheets", color: "#DCDCAA" });
+    
+    if (a.ownGoals >= 3) list.push({ icon: Frown, name: "Inimigo Íntimo", desc: "3+ Gols Contra", color: "#F48771" });
+    
+    return list;
+  }, [player, matchMvpCount, a, clutchGoals]);
 
   // Breakdown Rating Math: replaced by static legend matching the app
   return (
@@ -193,11 +407,11 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
               <span className="flex items-center gap-1 cursor-pointer hover:text-white transition-colors"
                     onMouseEnter={() => setShowRatingBreakdown(true)}
                     onMouseLeave={() => setShowRatingBreakdown(false)}>
-                <span>Rating <strong className="text-[#89D185] tabular-nums">{player.rating.toFixed(2)}</strong></span>
+                <span>Rating <strong className="text-[#89D185] tabular-nums">{dynamicRating.toFixed(2)}</strong></span>
                 <Info className="w-3 h-3 text-[#4FC3F7]" />
               </span>
               <span>·</span>
-              <span>Jogos <strong className="text-[#D4D4D4] tabular-nums">{player.matches}</strong></span>
+              <span>Jogos <strong className="text-[#D4D4D4] tabular-nums">{dynamicStats.matches}</strong></span>
               
               {/* RATING BREAKDOWN POPUP */}
               {showRatingBreakdown && (
@@ -216,22 +430,58 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
                   <div className="flex justify-between py-1"><span>Gol Contra</span><span className="text-[#F48771]">{rules?.own_goal ?? "-1.0"}</span></div>
                   
                   <div className="mt-3 text-[10px] text-[#858585] italic leading-tight border-t border-[#3E3E42] pt-2">
-                    * Nota Bayesiana: Penaliza ou bonifica levemente jogadores baseando-se no histórico.
+                    * Nota EMA: A nota final considera um bônus residual de temporadas passadas (comportamento de carrego de nota base para veteranos).
                   </div>
                   <div className="flex justify-between py-1 mt-2 font-bold text-white text-sm">
                     <span className="text-[#4FC3F7]">Sua Média Atual:</span>
-                    <span className="text-[#4FC3F7]">{player.rating.toFixed(2)}</span>
+                    <span className="text-[#4FC3F7]">{dynamicRating.toFixed(2)}</span>
                   </div>
                 </div>
               )}
             </div>
-            <div className="mt-3">
-              <button 
-                onClick={() => setShowSelector(true)} 
-                className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#007ACC] hover:bg-[#005A9E] text-white text-xs font-medium transition"
-              >
-                <Scale className="w-3.5 h-3.5" /> Comparar X1
-              </button>
+            <div className="mt-3 flex flex-col items-start gap-3 w-full">
+              <div className="flex flex-wrap items-center gap-3">
+                <button 
+                  onClick={() => setShowSelector(true)} 
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#007ACC] hover:bg-[#005A9E] text-white text-xs font-medium transition"
+                >
+                  <Scale className="w-3.5 h-3.5" /> Comparar X1
+                </button>
+
+                <div className="flex items-center bg-[#1E1E1E] border border-[#3E3E42] rounded-md p-0.5 flex-wrap">
+                  {data?.seasonsConfig && data.seasonsConfig.length > 0 && (
+                    <select 
+                      value={data.seasonsConfig.find(s => s.id === evolutionFilter) ? evolutionFilter : ""}
+                      onChange={(e) => {
+                        if (e.target.value) setEvolutionFilter(e.target.value);
+                      }}
+                      className="bg-transparent text-[10px] uppercase text-[#007ACC] font-bold px-2 py-0.5 outline-none cursor-pointer"
+                    >
+                      <option value="" disabled>Temporadas</option>
+                      {data.seasonsConfig.map(s => (
+                        <option key={s.id} value={s.id} className="bg-[#252526] text-[#D4D4D4]">
+                          Temporada: {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {data?.seasonsConfig && data.seasonsConfig.length > 0 && <div className="w-px h-3 bg-[#3E3E42] mx-1"></div>}
+                  <button onClick={() => setEvolutionFilter('last')} className={`px-2 py-0.5 rounded text-[10px] uppercase ${evolutionFilter === 'last' ? "bg-[#007ACC] text-white" : "text-[#CCCCCC] hover:text-white"}`}>Última Pelada</button>
+                  <button onClick={() => setEvolutionFilter('month')} className={`px-2 py-0.5 rounded text-[10px] uppercase ${evolutionFilter === 'month' ? "bg-[#007ACC] text-white" : "text-[#CCCCCC] hover:text-white"}`}>Mês</button>
+                  <button onClick={() => setEvolutionFilter('year')} className={`px-2 py-0.5 rounded text-[10px] uppercase ${evolutionFilter === 'year' ? "bg-[#007ACC] text-white" : "text-[#CCCCCC] hover:text-white"}`}>Ano</button>
+                  <button onClick={() => setEvolutionFilter('all')} className={`px-2 py-0.5 rounded text-[10px] uppercase ${evolutionFilter === 'all' ? "bg-[#007ACC] text-white" : "text-[#CCCCCC] hover:text-white"}`}>Tudo</button>
+                  <button onClick={() => setEvolutionFilter('custom')} className={`px-2 py-0.5 rounded text-[10px] uppercase ${evolutionFilter === 'custom' ? "bg-[#007ACC] text-white" : "text-[#CCCCCC] hover:text-white"}`}>Personalizado</button>
+                </div>
+              </div>
+              
+              {evolutionFilter === 'custom' && (
+                <div className="px-3 py-2 rounded-md border border-[#3E3E42] bg-[#1E1E1E] flex flex-wrap gap-2 items-center">
+                  <span className="text-[10px] uppercase tracking-widest text-[#858585]">Período</span>
+                  <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="px-2 py-0.5 rounded bg-[#252526] border border-[#3E3E42] text-xs text-[#D4D4D4] focus:outline-none focus:border-[#007ACC]" />
+                  <span className="text-[10px] text-[#858585]">até</span>
+                  <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="px-2 py-0.5 rounded bg-[#252526] border border-[#3E3E42] text-xs text-[#D4D4D4] focus:outline-none focus:border-[#007ACC]" />
+                </div>
+              )}
             </div>
           </div>
           <button onClick={onClose} className="w-9 h-9 rounded-md bg-[#2D2D30] border border-[#3E3E42] hover:bg-[#3E3E42] flex items-center justify-center shrink-0 self-start">
@@ -241,14 +491,66 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
 
         <div className="p-6 space-y-6">
           <div>
-            <div className="text-[11px] uppercase tracking-widest text-[#858585] mb-3">Estatísticas Principais</div>
-            <div className="grid grid-cols-3 gap-3">
-              <MainStat label="G + A" value={ga} color="#89D185" />
-              <MainStat label="Gols" value={player.goals} />
-              <MainStat label="Assistências" value={player.assists} color="#DCDCAA" />
-              <MainStat label="Vitórias" value={player.wins} color="#89D185" />
-              <MainStat label="Empates" value={player.draws} />
-              <MainStat label="Derrotas" value={player.losses} color="#F48771" />
+            <div className="text-[11px] uppercase tracking-widest text-[#858585] mb-3">Estatísticas Principais ({evolutionFilter === 'all' ? 'Todo o Histórico' : 'Filtradas'})</div>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+              <MainStat label="G + A" value={dynamicStats.ga} color="#89D185" />
+              <MainStat label="Gols" value={dynamicStats.goals} />
+              <MainStat label="Assistências" value={dynamicStats.assists} color="#DCDCAA" />
+              <MainStat label="Vitórias" value={dynamicStats.wins} color="#89D185" />
+              <MainStat label="Empates" value={dynamicStats.draws} />
+              <MainStat label="Derrotas" value={dynamicStats.losses} color="#F48771" />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex flex-col h-full w-full">
+              <div className="flex items-center justify-between mb-2 gap-4">
+                <div className="flex items-center gap-3 shrink-0">
+                  <button onClick={() => setActiveTab('rating')} className={`text-[11px] uppercase tracking-widest transition-colors ${activeTab === 'rating' ? 'text-[#4FC3F7]' : 'text-[#858585] hover:text-[#D4D4D4]'}`}>Evolução (Nota)</button>
+                  <button onClick={() => setActiveTab('form')} className={`text-[11px] uppercase tracking-widest transition-colors ${activeTab === 'form' ? 'text-[#89D185]' : 'text-[#858585] hover:text-[#D4D4D4]'}`}>Correlação (G+A)</button>
+                </div>
+              </div>
+              <div className="rounded-md bg-[#1E1E1E] border border-[#3E3E42] w-full h-[350px] p-4">
+                {activeTab === 'rating' ? (
+                  evolutionChartData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={evolutionChartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#3E3E42" vertical={false} />
+                        <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: '#858585', fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis domain={['auto', 'auto']} tick={{ fill: '#858585', fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <RechartsTooltip 
+                          contentStyle={{ backgroundColor: '#252526', borderColor: '#3E3E42', color: '#D4D4D4' }}
+                          itemStyle={{ color: '#007ACC' }}
+                          labelFormatter={formatDate}
+                          formatter={(value: number | string) => [Number(value).toFixed(2), 'Nota']}
+                        />
+                        <Line type="monotone" dataKey="nota" stroke="#007ACC" strokeWidth={3} dot={{ fill: '#007ACC', r: 4 }} activeDot={{ r: 6, fill: '#4FC3F7' }} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-sm text-[#858585]">Gráfico indisponível</div>
+                  )
+                ) : (
+                  formChartData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={formChartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#3E3E42" vertical={false} />
+                        <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: '#858585', fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: '#858585', fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <RechartsTooltip 
+                          contentStyle={{ backgroundColor: '#252526', borderColor: '#3E3E42', color: '#D4D4D4' }}
+                          labelFormatter={formatDate}
+                        />
+                        <Line name="G+A" type="monotone" dataKey="ga" stroke="#4FC3F7" strokeWidth={3} dot={false} isAnimationActive={false} />
+                        <Line name="Gols" type="monotone" dataKey="goals" stroke="#89D185" strokeWidth={2} dot={{ fill: '#89D185', r: 3 }} isAnimationActive={false} />
+                        <Line name="Assistências" type="monotone" dataKey="assists" stroke="#DCDCAA" strokeWidth={2} dot={{ fill: '#DCDCAA', r: 3 }} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-sm text-[#858585]">Gráfico de forma indisponível</div>
+                  )
+                )}
+              </div>
             </div>
           </div>
 
@@ -262,7 +564,7 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
                   onMouseLeave={() => setShowRadarInfo(false)}
                 />
                 {showRadarInfo && (
-                  <div className="absolute top-full right-0 mt-1 w-64 bg-[#252526] border border-[#3E3E42] p-3 rounded-md shadow-2xl z-50 text-xs">
+                  <div className="absolute bottom-full mb-2 left-0 w-64 bg-[#252526] border border-[#3E3E42] p-3 rounded-md shadow-2xl z-50 text-xs">
                     <div className="font-bold text-white mb-2 pb-1 border-b border-[#3E3E42]">Entenda o Gráfico</div>
                     <div className="mb-1"><strong className="text-[#4FC3F7]">Ataque:</strong> Média de gols por jogo.</div>
                     <div className="mb-1"><strong className="text-[#4FC3F7]">Visão:</strong> Média de assistências por jogo.</div>
@@ -283,40 +585,24 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
                 </ResponsiveContainer>
               </div>
             </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-[11px] uppercase tracking-widest text-[#858585]">Evolução (Nota Média)</div>
-                <select 
-                  className="bg-transparent border border-[#3E3E42] rounded px-1 text-[10px] uppercase tracking-widest text-[#4FC3F7] cursor-pointer focus:outline-none"
-                  value={evolutionFilter}
-                  onChange={(e) => setEvolutionFilter(e.target.value as any)}
-                >
-                  <option value="last10" className="bg-[#252526]">Últimas 10</option>
-                  <option value="months" className="bg-[#252526]">Por Mês (12m)</option>
-                  <option value="all" className="bg-[#252526]">Todo Histórico</option>
-                </select>
-              </div>
-              <div className="rounded-md bg-[#1E1E1E] border border-[#3E3E42] h-64 p-4">
-                {evolutionChartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={evolutionChartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#3E3E42" vertical={false} />
-                      <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: '#858585', fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis domain={['auto', 'auto']} tick={{ fill: '#858585', fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <RechartsTooltip 
-                        contentStyle={{ backgroundColor: '#252526', borderColor: '#3E3E42', color: '#D4D4D4' }}
-                        itemStyle={{ color: '#007ACC' }}
-                        labelFormatter={formatDate}
-                        formatter={(value: number | string) => [Number(value).toFixed(2), 'Nota']}
-                      />
-                      <Line type="monotone" dataKey="nota" stroke="#007ACC" strokeWidth={3} dot={{ fill: '#007ACC', r: 4 }} activeDot={{ r: 6, fill: '#4FC3F7' }} isAnimationActive={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-sm text-[#858585]">Gráfico indisponível</div>
-                )}
-              </div>
+            
+            <div className="flex flex-col">
+              <div className="text-[11px] uppercase tracking-widest text-[#858585] mb-2">Conquistas & Badges <Trophy className="inline w-3 h-3 text-[#FFD700] ml-1" /></div>
+              {badges.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {badges.map((b, i) => (
+                    <div key={i} className="bg-[#1E1E1E] border border-[#3E3E42] rounded-md px-3 py-2 flex items-center gap-2 relative overflow-hidden group hover:border-[#4FC3F7]/50 transition-colors w-[calc(50%-0.25rem)]">
+                      <b.icon className="w-5 h-5 shrink-0 transition-transform group-hover:scale-110" style={{ color: b.color }} />
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[11px] font-bold text-[#D4D4D4] truncate">{b.name}</span>
+                        <span className="text-[9px] text-[#858585] truncate">{b.desc}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-[#858585] bg-[#1E1E1E] border border-[#3E3E42] rounded-md p-4 flex items-center justify-center h-full min-h-[100px]">Nenhuma badge conquistada.</div>
+              )}
             </div>
           </div>
 

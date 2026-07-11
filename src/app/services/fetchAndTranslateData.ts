@@ -46,6 +46,12 @@ export interface Player {
   advanced?: PlayerAdvanced;
   gkStats?: { games: number, wins: number, clean_sheets: number, goals_conceded: number };
   evolution_chart?: { date: string, nota: number }[];
+  active_temporada_rating?: number;
+  season_stats?: Record<string, {
+    temporada_id: string;
+    games: number; wins: number; goals: number; assists: number;
+    main_season_games: number; main_season_wins: number; main_season_goals: number; main_season_assists: number;
+  }>;
 }
 
 export interface MatchEvent {
@@ -137,6 +143,8 @@ export interface SeasonConfig {
   name: string;
   startDate: string;
   endDate: string;
+  isPreSeason?: boolean;
+  parentSeasonId?: string;
 }
 
 export interface TranslatedData {
@@ -284,8 +292,10 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
     id: safeString(p.id),
     name: safeString(p.name),
     avatar: avatarFor(safeString(p.name), safeString(p.icon)),
-    rating: safeNumber(p.nota),
+    rating: safeNumber(p.active_temporada_rating || p.nota), // Use new EMA rating if available
     baseRating: K_RATING_BASE,
+    active_temporada_rating: safeNumber(p.active_temporada_rating || p.nota),
+    season_stats: p.season_stats || {},
     matches: safeNumber(p.games),
     goals: safeNumber(p.goals),
     assists: safeNumber(p.assists),
@@ -626,6 +636,8 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
     name: safeString(s.name),
     startDate: safeString(s.startDate),
     endDate: safeString(s.endDate),
+    isPreSeason: s.isPreSeason === true,
+    parentSeasonId: safeString(s.parentSeasonId),
   }));
 
   console.log(

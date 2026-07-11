@@ -113,23 +113,53 @@ export function PlayerStats() {
   const [sortKey, setSortKey] = useState<Key>("ga");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   
-  // Default to the first (latest) season if available, else 'all'
-  const defaultPeriod = seasonsConfig.length > 0 ? seasonsConfig[0].id : "all";
+  const defaultPeriod = useMemo(() => {
+    if (seasonsConfig.length === 0) return "all";
+    const now = new Date();
+    for (const season of seasonsConfig) {
+      if (season.startDate && season.endDate) {
+        const start = new Date(season.startDate);
+        const end = new Date(season.endDate);
+        end.setHours(23, 59, 59, 999);
+        if (now >= start && now <= end) {
+          return season.isPreSeason && season.parentSeasonId ? season.parentSeasonId : season.id;
+        }
+      }
+    }
+    return seasonsConfig[0].id;
+  }, [seasonsConfig]);
+
   const [period, setPeriod] = useState<Period>(defaultPeriod);
   const [customFrom, setCustomFrom] = useState("2026-01-01");
   const [customTo, setCustomTo] = useState("2026-12-31");
   const [selected, setSelected] = useState<Player | null>(null);
   const [viewAllCategory, setViewAllCategory] = useState<{key: Key, title: string} | null>(null);
 
-  const range = useMemo<{ from: Date | null; to: Date | null }>(() => {
-    if (period === "all") return { from: null, to: null };
+  // Instead of a single range, we might have multiple valid ranges for a Temporada
+  const validRanges = useMemo<{ from: Date; to: Date }[] | null>(() => {
+    if (period === "all") return null;
 
     const selectedSeason = seasonsConfig.find(s => s.id === period);
     if (selectedSeason) {
-      return { 
-        from: new Date(selectedSeason.startDate), 
-        to: new Date(selectedSeason.endDate) 
-      };
+      const ranges = [];
+      // Always add the main season range
+      const mainTo = new Date(selectedSeason.endDate);
+      mainTo.setHours(23, 59, 59, 999);
+      ranges.push({
+        from: new Date(selectedSeason.startDate),
+        to: mainTo
+      });
+      // Always include pre-seasons linked to this one
+      const preSeasons = seasonsConfig.filter(s => s.isPreSeason && s.parentSeasonId === selectedSeason.id);
+      for (const ps of preSeasons) {
+        const psTo = new Date(ps.endDate);
+        psTo.setHours(23, 59, 59, 999);
+        ranges.push({
+          from: new Date(ps.startDate),
+          to: psTo
+        });
+      }
+      return ranges;
     }
 
     let refDate = new Date();
@@ -141,37 +171,35 @@ export function PlayerStats() {
     }
 
     if (period === "last") {
-      return { 
+      return [{ 
         from: new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 0, 0, 0, 0),
         to: new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 23, 59, 59, 999)
-      };
+      }];
     }
-    if (period === "month") return { from: startOfMonth(refDate), to: endOfMonth(refDate) };
-    if (period === "year") return { from: startOfYear(refDate), to: endOfYear(refDate) };
+    if (period === "month") return [{ from: startOfMonth(refDate), to: endOfMonth(refDate) }];
+    if (period === "year") return [{ from: startOfYear(refDate), to: endOfYear(refDate) }];
 
     const [fy, fm, fd] = customFrom.split("-").map(Number);
     const [ty, tm, td] = customTo.split("-").map(Number);
-    return {
+    return [{
       from: new Date(fy, (fm || 1) - 1, fd || 1, 0, 0, 0, 0),
       to: new Date(ty, (tm || 1) - 1, td || 1, 23, 59, 59, 999),
-    };
+    }];
   }, [period, customFrom, customTo, matches, seasonsConfig]);
 
   const merged = useMemo<(Player & AggStats)[]>(() => {
     const activeMatches = period === "all" ? matches : matches.filter(m => {
       const t = new Date(m.date).getTime();
       if (Number.isNaN(t)) return false;
-      if (range.from && t < range.from.getTime()) return false;
-      if (range.to && t > range.to.getTime()) return false;
-      return true;
+      if (!validRanges) return true;
+      return validRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
     });
 
     const activeSessions = period === "all" ? sessions : sessions.filter(s => {
       const t = new Date(s.timestamp).getTime();
       if (Number.isNaN(t)) return false;
-      if (range.from && t < range.from.getTime()) return false;
-      if (range.to && t > range.to.getTime()) return false;
-      return true;
+      if (!validRanges) return true;
+      return validRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
     });
 
     const attachExtras = (p: Player) => {
@@ -202,7 +230,24 @@ export function PlayerStats() {
           }
         });
       });
-      return { mvpCount, formLast10, clutchGoals };
+      let periodRating = p.rating;
+      if (period !== "all" && p.evolution_chart) {
+        const periodChart = p.evolution_chart.filter(c => {
+          const t = new Date(c.rawDate || c.date).getTime();
+          if (Number.isNaN(t)) return false;
+          if (!validRanges) return true;
+          return validRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
+        }).sort((a, b) => new Date(a.rawDate || a.date).getTime() - new Date(b.rawDate || b.date).getTime());
+        
+        if (periodChart.length > 0) {
+          periodRating = periodChart[periodChart.length - 1].nota;
+        } else {
+          // Usa a nota base do sistema, mas players com 0 matches serão ocultados de qualquer forma.
+          periodRating = 6.5;
+        }
+      }
+
+      return { mvpCount, formLast10, clutchGoals, rating: periodRating };
     };
 
     if (period === "all" && seasonsConfig.length === 0) {
@@ -226,11 +271,12 @@ export function PlayerStats() {
         ...attachExtras(p)
       } as Player & AggStats & { mvpCount: number, formLast10: number, clutchGoals: number }));
     }
-    const agg = aggregate(matches, range.from, range.to);
+    // We pass null for from/to since we already filtered activeMatches
+    const agg = aggregate(activeMatches, null, null);
     return players
       .map((p) => ({ ...p, ...(agg.get(p.id) ?? emptyAgg()), ...attachExtras(p) }))
       .filter((p) => p.matches > 0);
-  }, [players, matches, sessions, range, period]);
+  }, [players, matches, sessions, validRanges, period, seasonsConfig]);
 
   const sorted = useMemo(() => {
     const arr = [...merged].sort((a, b) => {
@@ -267,9 +313,11 @@ export function PlayerStats() {
   const dynamicDuos = useMemo(() => {
     const playersMap = new Map(players.map(p => [p.id, p]));
     const duos = new Map<string, number>();
-    const activeMatches = period === "season" ? matches : matches.filter(m => {
+    const activeMatches = period === "all" ? matches : matches.filter(m => {
       const t = new Date(m.date).getTime();
-      return !Number.isNaN(t) && (!range.from || t >= range.from.getTime()) && (!range.to || t <= range.to.getTime());
+      if (Number.isNaN(t)) return false;
+      if (!validRanges) return true;
+      return validRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
     });
 
     for (const m of activeMatches) {
@@ -288,7 +336,7 @@ export function PlayerStats() {
       return { p1Name: playersMap.get(id1)?.name ?? id1, p2Name: playersMap.get(id2)?.name ?? id2, count };
     });
     return arr.sort((a, b) => b.count - a.count).slice(0, 5);
-  }, [matches, range, period, players]);
+  }, [matches, validRanges, period, players]);
 
   const onSort = (k: Key) => {
     if (sortKey === k) setSortDir(sortDir === "desc" ? "asc" : "desc");

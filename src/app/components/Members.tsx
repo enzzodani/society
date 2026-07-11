@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Shield, Search } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { type Player } from "./data";
@@ -13,16 +13,105 @@ export function Members() {
   const [selected, setSelected] = useState<Player | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("rating");
+  const [period, setPeriod] = useState<string>("all");
+  const [hasSetDefault, setHasSetDefault] = useState(false);
+
+  useEffect(() => {
+    if (data?.seasonsConfig && data.seasonsConfig.length > 0 && !hasSetDefault) {
+      const now = new Date();
+      const current = data.seasonsConfig.find(s => {
+         if (!s.startDate || !s.endDate) return false;
+         const start = new Date(s.startDate);
+         const end = new Date(s.endDate);
+         end.setHours(23, 59, 59, 999);
+         return now >= start && now <= end;
+      });
+      if (current) {
+         const idToSet = current.isPreSeason && current.parentSeasonId ? current.parentSeasonId : current.id;
+         setPeriod(idToSet);
+      }
+      setHasSetDefault(true);
+    }
+  }, [data?.seasonsConfig, hasSetDefault]);
+
+  const validRanges = useMemo(() => {
+    if (period === "all" || !data?.seasonsConfig) return null;
+    const selectedSeason = data.seasonsConfig.find((s) => s.id === period);
+    if (!selectedSeason) return null;
+
+    const mainTo = new Date(selectedSeason.endDate);
+    mainTo.setHours(23, 59, 59, 999);
+    const ranges = [{
+      from: new Date(selectedSeason.startDate),
+      to: mainTo
+    }];
+    
+    const preSeasons = data.seasonsConfig.filter((s) => s.isPreSeason && s.parentSeasonId === selectedSeason.id);
+    for (const ps of preSeasons) {
+      const psTo = new Date(ps.endDate);
+      psTo.setHours(23, 59, 59, 999);
+      ranges.push({
+        from: new Date(ps.startDate),
+        to: psTo
+      });
+    }
+    return ranges;
+  }, [period, data?.seasonsConfig]);
+
+  const activeMatches = useMemo(() => {
+    if (!data?.matches) return [];
+    if (!validRanges) return data.matches;
+    return data.matches.filter(m => {
+      const t = new Date(m.date).getTime();
+      if (Number.isNaN(t)) return false;
+      return validRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
+    });
+  }, [data?.matches, validRanges]);
 
   const list = useMemo(() => {
-    let arr = [...players];
+    let arr = players.map(p => {
+       if (period === "all") return p;
+       
+       let matches = 0, goals = 0, assists = 0;
+       for (const m of activeMatches) {
+          const isRed = m.redRoster?.some(r => r.id === p.id) || m.gkRed?.id === p.id;
+          const isWhite = m.whiteRoster?.some(r => r.id === p.id) || m.gkWhite?.id === p.id;
+          if (isRed || isWhite) matches++;
+          for (const ev of m.events) {
+             if (ev.type === "goal" && ev.playerId === p.id) goals++;
+             if (ev.type === "goal" && ev.assistId === p.id) assists++;
+          }
+       }
+       
+       let rating = p.rating;
+       if (p.evolution_chart && validRanges) {
+          const periodChart = p.evolution_chart.filter(c => {
+            const t = new Date(c.rawDate || c.date).getTime();
+            if (Number.isNaN(t)) return false;
+            return validRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
+          }).sort((a, b) => new Date(a.rawDate || a.date).getTime() - new Date(b.rawDate || b.date).getTime());
+          
+          if (periodChart.length > 0) {
+            rating = periodChart[periodChart.length - 1].nota;
+          } else {
+            rating = data?.ratingRules?.base ?? 6.5;
+          }
+       }
+       
+       return { ...p, matches, goals, assists, rating };
+    });
+
+    if (period !== "all") {
+       arr = arr.filter(p => p.matches > 0);
+    }
+
     if (query.trim()) arr = arr.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()));
     arr.sort((a, b) => {
       if (sort === "name") return a.name.localeCompare(b.name);
       return (b as any)[sort] - (a as any)[sort];
     });
     return arr;
-  }, [query, sort, players]);
+  }, [query, sort, players, period, activeMatches, validRanges, data?.ratingRules?.base]);
 
   return (
     <div className="space-y-6">
@@ -41,6 +130,19 @@ export function Members() {
               className="pl-9 pr-3 py-2 rounded-md bg-[#3C3C3C] border border-[#3E3E42] text-sm text-[#D4D4D4] placeholder:text-[#858585] focus:outline-none focus:border-[#007ACC]"
             />
           </div>
+          
+          {data?.seasonsConfig && data.seasonsConfig.length > 0 && (
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className="px-3 py-2 rounded-md bg-[#3C3C3C] border border-[#3E3E42] text-sm text-[#D4D4D4] focus:outline-none focus:border-[#007ACC]"
+            >
+              <option value="all">Todas as Temporadas</option>
+              {data.seasonsConfig.map(s => (
+                <option key={s.id} value={s.id}>Temporada: {s.name}</option>
+              ))}
+            </select>
+          )}
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as Sort)}

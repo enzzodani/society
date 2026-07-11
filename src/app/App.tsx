@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from "react";
-import { Search, Bell, Loader2, AlertTriangle, Download, Menu } from "lucide-react";
+import { Search, Bell, Loader2, AlertTriangle, Download, Menu, X } from "lucide-react";
 import { Toaster } from "sonner";
 import { Sidebar, type Section } from "./components/Sidebar";
 import { Dashboard } from "./components/Dashboard";
@@ -22,6 +22,8 @@ function Header({ onNavigate, onMenuToggle }: { onNavigate: (s: Section) => void
   const [q, setQ] = useState("");
   const [showResults, setShowResults] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportSeason, setExportSeason] = useState<string>("all");
   const wrap = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,14 +61,50 @@ function Header({ onNavigate, onMenuToggle }: { onNavigate: (s: Section) => void
 
   const handleExportJSON = () => {
     if (!data) return;
-    const jsonString = JSON.stringify(data, null, 2);
+    
+    let exportData = data;
+    
+    if (exportSeason !== "all") {
+       const selectedSeason = data.seasonsConfig?.find(s => s.id === exportSeason);
+       if (selectedSeason) {
+         const ranges = [];
+         const mainTo = new Date(selectedSeason.endDate);
+         mainTo.setHours(23, 59, 59, 999);
+         ranges.push({ from: new Date(selectedSeason.startDate), to: mainTo });
+         
+         const preSeasons = data.seasonsConfig?.filter(s => s.isPreSeason && s.parentSeasonId === selectedSeason.id) || [];
+         for (const ps of preSeasons) {
+            const psTo = new Date(ps.endDate);
+            psTo.setHours(23, 59, 59, 999);
+            ranges.push({ from: new Date(ps.startDate), to: psTo });
+         }
+         
+         exportData = {
+           ...data,
+           matches: data.matches.filter(m => {
+             const t = new Date(m.date).getTime();
+             if (isNaN(t)) return false;
+             return ranges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
+           }),
+           sessions: data.sessions.filter(s => {
+             const t = new Date(s.timestamp).getTime();
+             if (isNaN(t)) return false;
+             return ranges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
+           }),
+           seasonsConfig: data.seasonsConfig.filter(s => s.id === selectedSeason.id || s.parentSeasonId === selectedSeason.id)
+         };
+       }
+    }
+
+    const jsonString = JSON.stringify(exportData, null, 2);
     const blob = new Blob([jsonString], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `site_data_export_${new Date().getTime()}.json`;
+    a.download = `site_data_export_${exportSeason === "all" ? "full" : exportSeason}_${new Date().getTime()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    setShowExportModal(false);
   };
 
   return (
@@ -158,7 +196,7 @@ function Header({ onNavigate, onMenuToggle }: { onNavigate: (s: Section) => void
         )}
       </div>
 
-      <button onClick={handleExportJSON} title="Baixar dados brutos do site" className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#2D2D30] hover:bg-[#3E3E42] border border-[#3E3E42] text-sm text-[#CCCCCC] ml-2">
+      <button onClick={() => setShowExportModal(true)} title="Baixar dados do site" className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#2D2D30] hover:bg-[#3E3E42] border border-[#3E3E42] text-sm text-[#CCCCCC] ml-2">
         <Download className="w-4 h-4" />
         <span className="hidden md:inline">Baixar Dados</span>
       </button>
@@ -170,6 +208,41 @@ function Header({ onNavigate, onMenuToggle }: { onNavigate: (s: Section) => void
         </div>
         <div className="w-9 h-9 rounded-full bg-[#007ACC] flex items-center justify-center shrink-0 text-white text-sm">A</div>
       </div>
+
+      {showExportModal && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#252526] border border-[#3E3E42] rounded-md max-w-sm w-full">
+            <div className="flex items-center justify-between p-4 border-b border-[#3E3E42]">
+              <h2 className="text-white font-medium text-lg tracking-tight">Exportar Dados</h2>
+              <button onClick={() => setShowExportModal(false)} className="text-[#858585] hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5">
+              <p className="text-sm text-[#CCCCCC] mb-4">Escolha os dados que deseja baixar para fazer backup ou análise off-line.</p>
+              
+              <label className="text-[11px] uppercase tracking-widest text-[#858585] block mb-2">Escopo do Backup</label>
+              <select 
+                value={exportSeason} 
+                onChange={e => setExportSeason(e.target.value)}
+                className="w-full px-3 py-2 rounded-md bg-[#1E1E1E] border border-[#3E3E42] text-sm text-white focus:outline-none focus:border-[#007ACC] mb-6"
+              >
+                <option value="all">Todo o Banco de Dados (Completo)</option>
+                {data?.seasonsConfig?.map(s => (
+                  <option key={s.id} value={s.id}>Apenas Temporada: {s.name}</option>
+                ))}
+              </select>
+
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setShowExportModal(false)} className="px-4 py-2 rounded-md text-sm text-[#CCCCCC] hover:text-white transition">Cancelar</button>
+                <button onClick={handleExportJSON} className="flex items-center gap-2 px-4 py-2 rounded-md bg-[#007ACC] text-white text-sm hover:bg-[#005A9E] transition">
+                  <Download className="w-4 h-4" /> Baixar JSON
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }
