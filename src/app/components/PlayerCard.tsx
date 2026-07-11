@@ -350,23 +350,8 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
   }, [data?.matches, player, evolutionFilter, activePeriodRanges]);
 
   const dynamicRating = useMemo(() => {
-    if (evolutionFilter === 'all') return player.rating;
-    
-    const rawChart: {date: string, nota: number, rawDate: string}[] = (player as any).evolution_chart || [];
-    if (rawChart.length > 0 && activePeriodRanges) {
-        const periodChart = rawChart.filter(c => {
-          const t = new Date(c.rawDate || c.date).getTime();
-          if (Number.isNaN(t)) return false;
-          return activePeriodRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
-        }).sort((a, b) => new Date(a.rawDate || a.date).getTime() - new Date(b.rawDate || b.date).getTime());
-        
-        if (periodChart.length > 0) {
-          return periodChart[periodChart.length - 1].nota;
-        }
-    }
-    // Retorna a base ou 6.5 caso não tenha jogado na temporada
-    return rules?.base ?? 6.5;
-  }, [player, evolutionFilter, activePeriodRanges, rules]);
+    return player.rating;
+  }, [player.rating]);
 
   // Achievements / Badges Logic
   const badges = useMemo(() => {

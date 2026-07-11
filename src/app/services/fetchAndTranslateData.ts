@@ -136,6 +136,8 @@ export interface RatingRules {
   yellow: number;
   red: number;
   own_goal: number;
+  team_goal?: number;
+  clean_sheet?: number;
 }
 
 export interface SeasonConfig {
@@ -227,7 +229,7 @@ function eventPlayerId(ev: any, kind: "player" | "assist"): string {
   return safeString(ev[idField]) || safeString(ev[kind]);
 }
 
-function calculateMatchRating(args: {
+export function calculateMatchRating(args: {
   status: number, goals: number, assists: number, ownGoals: number,
   teamGoals: number, conceded: number, yellow: number, red: number, teamWinStreak?: number
 }, rules: any): number {
@@ -273,11 +275,11 @@ function calculateMatchRating(args: {
   return Math.max(0, Math.min(10, rating));
 }
 
-function calculateFinalRating(ratings: number[]): number {
-  if (!ratings || ratings.length === 0) return K_RATING_BASE;
+export function calculateFinalRating(ratings: number[]): number {
+  if (!ratings || ratings.length === 0) return 6.0;
   const sum = ratings.reduce((s, r) => s + r, 0);
   const C = 3; // Bayesian Anchor
-  let finalR = (sum + K_RATING_BASE * C) / (ratings.length + C);
+  let finalR = (sum + 6.0 * C) / (ratings.length + C);
   
   const volumeBonus = Math.floor(ratings.length / 5) * 0.15;
   finalR += volumeBonus;

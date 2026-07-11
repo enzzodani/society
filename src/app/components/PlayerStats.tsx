@@ -5,6 +5,7 @@ import { type Player, type Match } from "./data";
 import { useData } from "../DataContext";
 import { PlayerCard } from "./PlayerCard";
 import { Modal } from "./Modal";
+import { calculateMatchRating, calculateFinalRating } from "../services/fetchAndTranslateData";
 
 type Key = "ga" | "matches" | "goals" | "assists" | "ved" | "cards" | "hatTricks" | "gkWins" | "gkCleanSheets" | "gkGoalsConcededAvg" | "gkNota" | "mvpCount" | "formLast10";
 type Period = "all" | "month" | "year" | "custom" | "last" | string;
@@ -21,10 +22,10 @@ const cols: { key: Key; label: string; help: string }[] = [
   { key: "formLast10", label: "Forma", help: "Média das últimas 10 partidas" },
 ];
 
-type AggStats = { matches: number; goals: number; assists: number; wins: number; draws: number; losses: number; yellowCards: number; redCards: number; hatTricks: number; gkGames: number; gkWins: number; gkCleanSheets: number; gkGoalsConceded: number; gkNota: number; clutchGoals: number; ownGoals: number; };
+type AggStats = { matches: number; goals: number; assists: number; wins: number; draws: number; losses: number; yellowCards: number; redCards: number; hatTricks: number; gkGames: number; gkWins: number; gkCleanSheets: number; gkGoalsConceded: number; gkNota: number; clutchGoals: number; ownGoals: number; ratings: number[]; };
 
 function emptyAgg(): AggStats {
-  return { matches: 0, goals: 0, assists: 0, wins: 0, draws: 0, losses: 0, yellowCards: 0, redCards: 0, hatTricks: 0, gkGames: 0, gkWins: 0, gkCleanSheets: 0, gkGoalsConceded: 0, gkNota: 0, clutchGoals: 0, ownGoals: 0 };
+  return { matches: 0, goals: 0, assists: 0, wins: 0, draws: 0, losses: 0, yellowCards: 0, redCards: 0, hatTricks: 0, gkGames: 0, gkWins: 0, gkCleanSheets: 0, gkGoalsConceded: 0, gkNota: 0, clutchGoals: 0, ownGoals: 0, ratings: [] };
 }
 
 function val(p: Player & AggStats, k: Key): number {
@@ -36,7 +37,7 @@ function val(p: Player & AggStats, k: Key): number {
   return (p as any)[k] as number;
 }
 
-function aggregate(matches: Match[], from: Date | null, to: Date | null): Map<string, AggStats> {
+function aggregate(matches: Match[], from: Date | null, to: Date | null, ratingRules?: any): Map<string, AggStats> {
   const out = new Map<string, AggStats>();
   const get = (id: string) => {
     let v = out.get(id);
@@ -56,6 +57,11 @@ function aggregate(matches: Match[], from: Date | null, to: Date | null): Map<st
     const seen = new Set<string>();
     const apply = (id: string, side: "red" | "white") => {
       if (!id || seen.has(id)) return;
+      
+      // If the player is the GK for this side, do not count them in the outfield stats
+      if (side === "red" && m.gkRed?.id === id) return;
+      if (side === "white" && m.gkWhite?.id === id) return;
+      
       seen.add(id);
       const s = get(id);
       s.matches += 1;
@@ -76,6 +82,31 @@ function aggregate(matches: Match[], from: Date | null, to: Date | null): Map<st
       if (ev.type === "own_goal" && ev.playerId) get(ev.playerId).ownGoals += 1;
     }
     
+    // Agora calcula o rating de cada jogador para este match
+    const applyRating = (id: string, status: number, teamGoals: number, conceded: number) => {
+      const g = matchGoals.get(id) || 0;
+      let a = 0;
+      let og = 0;
+      let yc = 0;
+      let rc = 0;
+      for (const ev of m.events) {
+        if (ev.type === "goal" && ev.assistId === id) a++;
+        if (ev.type === "own_goal" && ev.playerId === id) og++;
+        if (ev.type === "yellow_card" && ev.playerId === id) yc++;
+        if (ev.type === "red_card" && ev.playerId === id) rc++;
+      }
+      const mRating = calculateMatchRating({
+        status, goals: g, assists: a, ownGoals: og, teamGoals, conceded, yellow: yc, red: rc
+      }, ratingRules || { base: 6.0, goal: 1.0, assist: 0.8, win: 0.8, loss: -0.5, yellow: -0.5, red: -1.5, own_goal: -1.0, team_goal: 0.1, clean_sheet: 0.2 });
+      get(id).ratings.push(mRating);
+    };
+
+    const redStatus = redWin ? 1 : (whiteWin ? -1 : 0);
+    const whiteStatus = whiteWin ? 1 : (redWin ? -1 : 0);
+    
+    for (const r of m.redRoster) if (r.id !== m.gkRed?.id) applyRating(r.id, redStatus, m.scoreA, m.scoreB);
+    for (const w of m.whiteRoster) if (w.id !== m.gkWhite?.id) applyRating(w.id, whiteStatus, m.scoreB, m.scoreA);
+
     for (const [id, count] of matchGoals) {
       if (count >= 3) get(id).hatTricks += 1;
     }
@@ -231,19 +262,13 @@ export function PlayerStats() {
         });
       });
       let periodRating = p.rating;
-      if (period !== "all" && p.evolution_chart) {
-        const periodChart = p.evolution_chart.filter(c => {
-          const t = new Date(c.rawDate || c.date).getTime();
-          if (Number.isNaN(t)) return false;
-          if (!validRanges) return true;
-          return validRanges.some(r => t >= r.from.getTime() && t <= r.to.getTime());
-        }).sort((a, b) => new Date(a.rawDate || a.date).getTime() - new Date(b.rawDate || b.date).getTime());
-        
-        if (periodChart.length > 0) {
-          periodRating = periodChart[periodChart.length - 1].nota;
+      if (period !== "all") {
+        const agg = aggregate(activeMatches, null, null, data?.ratingRules);
+        const pAgg = agg.get(p.id);
+        if (pAgg && pAgg.ratings.length > 0) {
+          periodRating = calculateFinalRating(pAgg.ratings);
         } else {
-          // Usa a nota base do sistema, mas players com 0 matches serão ocultados de qualquer forma.
-          periodRating = 6.5;
+          periodRating = 6.5; // Base case for no games in period
         }
       }
 
@@ -273,7 +298,7 @@ export function PlayerStats() {
       } as Player & AggStats & { mvpCount: number, formLast10: number, clutchGoals: number }));
     }
     // We pass null for from/to since we already filtered activeMatches
-    const agg = aggregate(activeMatches, null, null);
+    const agg = aggregate(activeMatches, null, null, data?.ratingRules);
     return players
       .map((p) => ({ ...p, ...(agg.get(p.id) ?? emptyAgg()), gkNota: p.gkStats?.nota ?? 0, ...attachExtras(p) }))
       .filter((p) => p.matches > 0 || p.gkStats?.games !== undefined && p.gkStats.games > 0);
