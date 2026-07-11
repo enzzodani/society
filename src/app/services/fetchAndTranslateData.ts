@@ -360,7 +360,8 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
   });
 
   const ratingRules = siteData.rating_rules || {
-    base: K_RATING_BASE, goal: 0.6, assist: 0.4, win: 1.0, loss: -0.6, yellow: -0.3, red: -1.2, own_goal: -0.8
+    base: K_RATING_BASE, goal: 1.0, assist: 0.8, win: 0.8, loss: -0.5, yellow: -0.5, red: -1.5, own_goal: -1.0,
+    clean_sheet: 0.2, team_goal: 0.1
   };
 
   for (const match of historyRaw) {

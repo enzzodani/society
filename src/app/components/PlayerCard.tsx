@@ -513,8 +513,8 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
                           <div className="flex justify-between"><span>Nota Base</span><span className="text-white">{rules?.base ?? "6.0"}</span></div>
                           <div className="flex justify-between"><span>Vitória / Derrota</span><span className="text-[#89D185]">+{rules?.win ?? "0.8"}</span></div>
                           <div className="flex justify-between"><span>Gol / Assis</span><span className="text-[#89D185]">+{rules?.goal ?? "1.0"} / +{rules?.assist ?? "0.8"}</span></div>
-                          <div className="flex justify-between"><span>Gol do Time</span><span className="text-[#89D185]">+0.1</span></div>
-                          <div className="flex justify-between"><span>Clean Sheet (GK)</span><span className="text-[#89D185]">+0.2</span></div>
+                          <div className="flex justify-between"><span>Gol do Time</span><span className="text-[#89D185]">+{rules?.team_goal ?? "0.1"}</span></div>
+                          <div className="flex justify-between"><span>Clean Sheet</span><span className="text-[#89D185]">+{rules?.clean_sheet ?? "0.2"}</span></div>
                           <div className="flex justify-between"><span>Saldo de Gols</span><span className="text-[#4FC3F7]">±0.05/gol</span></div>
                           <div className="mt-2 text-[#F48771] italic leading-tight pt-1 border-t border-[#3E3E42]">* Gols e Vitórias contra times muito mais fortes recebem um bônus multiplicador (Elo Lite).</div>
                         </div>
