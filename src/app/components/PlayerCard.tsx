@@ -59,7 +59,6 @@ const EMPTY_ADV: PlayerAdvanced = {
 export function PlayerCard({ player, onClose }: { player: Player; onClose: () => void }) {
   const { data } = useData();
   const rules = data?.ratingRules;
-  const [showRatingBreakdown, setShowRatingBreakdown] = useState(false);
   const [showRadarInfo, setShowRadarInfo] = useState(false);
   const [evolutionFilter, setEvolutionFilter] = useState<string>('last');
   const [customFrom, setCustomFrom] = useState("2026-01-01");
@@ -404,40 +403,11 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
             <div className="flex items-center gap-2 text-xs text-[#858585] mt-1 relative">
               <span>#{player.id.slice(0, 8)}</span>
               <span>·</span>
-              <span className="flex items-center gap-1 cursor-pointer hover:text-white transition-colors"
-                    onMouseEnter={() => setShowRatingBreakdown(true)}
-                    onMouseLeave={() => setShowRatingBreakdown(false)}>
+              <span className="flex items-center gap-1">
                 <span>Rating <strong className="text-[#89D185] tabular-nums">{dynamicRating.toFixed(2)}</strong></span>
-                <Info className="w-3 h-3 text-[#4FC3F7]" />
               </span>
               <span>·</span>
               <span>Jogos <strong className="text-[#D4D4D4] tabular-nums">{dynamicStats.matches}</strong></span>
-              
-              {/* RATING BREAKDOWN POPUP */}
-              {showRatingBreakdown && (
-                <div className="absolute top-full left-10 mt-2 w-72 bg-[#252526] border border-[#3E3E42] p-4 rounded-md shadow-2xl z-50 text-xs text-[#D4D4D4]">
-                  <div className="font-bold text-white mb-2 pb-1 border-b border-[#3E3E42]">Composição da Nota</div>
-                  <div className="mb-3 text-[#858585] text-[10px] leading-relaxed">
-                    A sua nota é a média do seu desempenho em todas as partidas jogadas. Cada partida começa com uma Nota Base e sofre ajustes com base nos seus eventos em campo:
-                  </div>
-                  <div className="flex justify-between py-1"><span>Nota Base</span><span className="text-white">{rules?.base ?? "6.5"}</span></div>
-                  <div className="flex justify-between py-1"><span>Gol Feito</span><span className="text-[#89D185]">+{rules?.goal ?? "0.9"}</span></div>
-                  <div className="flex justify-between py-1"><span>Assistência</span><span className="text-[#89D185]">+{rules?.assist ?? "0.8"}</span></div>
-                  <div className="flex justify-between py-1"><span>Vitória</span><span className="text-[#89D185]">+{rules?.win ?? "1.5"}</span></div>
-                  <div className="flex justify-between py-1"><span>Derrota</span><span className="text-[#F48771]">{rules?.loss ?? "-1.5"}</span></div>
-                  <div className="flex justify-between py-1"><span>Cartão Amarelo</span><span className="text-[#DCDCAA]">{rules?.yellow ?? "-1.0"}</span></div>
-                  <div className="flex justify-between py-1"><span>Cartão Vermelho</span><span className="text-[#F48771]">{rules?.red ?? "-2.0"}</span></div>
-                  <div className="flex justify-between py-1"><span>Gol Contra</span><span className="text-[#F48771]">{rules?.own_goal ?? "-1.0"}</span></div>
-                  
-                  <div className="mt-3 text-[10px] text-[#858585] italic leading-tight border-t border-[#3E3E42] pt-2">
-                    * Nota EMA: A nota final considera um bônus residual de temporadas passadas (comportamento de carrego de nota base para veteranos).
-                  </div>
-                  <div className="flex justify-between py-1 mt-2 font-bold text-white text-sm">
-                    <span className="text-[#4FC3F7]">Sua Média Atual:</span>
-                    <span className="text-[#4FC3F7]">{dynamicRating.toFixed(2)}</span>
-                  </div>
-                </div>
-              )}
             </div>
             <div className="mt-3 flex flex-col items-start gap-3 w-full">
               <div className="flex flex-wrap items-center gap-3">
@@ -512,24 +482,57 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
               </div>
               <div className="rounded-md bg-[#1E1E1E] border border-[#3E3E42] w-full h-[350px] p-4">
                 {activeTab === 'rating' ? (
-                  evolutionChartData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={evolutionChartData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#3E3E42" vertical={false} />
-                        <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: '#858585', fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis domain={['auto', 'auto']} tick={{ fill: '#858585', fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <RechartsTooltip 
-                          contentStyle={{ backgroundColor: '#252526', borderColor: '#3E3E42', color: '#D4D4D4' }}
-                          itemStyle={{ color: '#007ACC' }}
-                          labelFormatter={formatDate}
-                          formatter={(value: number | string) => [Number(value).toFixed(2), 'Nota']}
-                        />
-                        <Line type="monotone" dataKey="nota" stroke="#007ACC" strokeWidth={3} dot={{ fill: '#007ACC', r: 4 }} activeDot={{ r: 6, fill: '#4FC3F7' }} isAnimationActive={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-sm text-[#858585]">Gráfico indisponível</div>
-                  )
+                  <div className="flex flex-col lg:flex-row w-full h-full gap-4">
+                    <div className="flex-1 h-full min-h-[250px]">
+                      {evolutionChartData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={evolutionChartData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#3E3E42" vertical={false} />
+                            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: '#858585', fontSize: 10 }} axisLine={false} tickLine={false} />
+                            <YAxis domain={['auto', 'auto']} tick={{ fill: '#858585', fontSize: 10 }} axisLine={false} tickLine={false} />
+                            <RechartsTooltip 
+                              contentStyle={{ backgroundColor: '#252526', borderColor: '#3E3E42', color: '#D4D4D4' }}
+                              itemStyle={{ color: '#007ACC' }}
+                              labelFormatter={formatDate}
+                              formatter={(value: number | string) => [Number(value).toFixed(2), 'Nota Global']}
+                            />
+                            <Line type="monotone" dataKey="nota" stroke="#007ACC" strokeWidth={3} dot={{ fill: '#007ACC', r: 4 }} activeDot={{ r: 6, fill: '#4FC3F7' }} isAnimationActive={false} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-sm text-[#858585]">Gráfico indisponível</div>
+                      )}
+                    </div>
+                    
+                    <div className="w-full lg:w-72 flex-shrink-0 bg-[#252526] border border-[#3E3E42] rounded-md p-4 overflow-y-auto hidden md:block">
+                      <div className="font-bold text-white mb-2 pb-1 border-b border-[#3E3E42] text-sm">Matemática da Nota</div>
+                      
+                      <div className="mb-4">
+                        <div className="text-[10px] uppercase tracking-widest text-[#858585] mb-2">1. Partida Diária</div>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex justify-between"><span>Nota Base</span><span className="text-white">{rules?.base ?? "6.0"}</span></div>
+                          <div className="flex justify-between"><span>Vitória / Derrota</span><span className="text-[#89D185]">+{rules?.win ?? "0.8"}</span></div>
+                          <div className="flex justify-between"><span>Gol / Assis</span><span className="text-[#89D185]">+{rules?.goal ?? "1.0"} / +{rules?.assist ?? "0.8"}</span></div>
+                          <div className="flex justify-between"><span>Gol do Time</span><span className="text-[#89D185]">+0.1</span></div>
+                          <div className="flex justify-between"><span>Clean Sheet (GK)</span><span className="text-[#89D185]">+0.2</span></div>
+                          <div className="flex justify-between"><span>Saldo de Gols</span><span className="text-[#4FC3F7]">±0.05/gol</span></div>
+                          <div className="mt-2 text-[#F48771] italic leading-tight pt-1 border-t border-[#3E3E42]">* Gols e Vitórias contra times muito mais fortes recebem um bônus multiplicador (Elo Lite).</div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-[10px] uppercase tracking-widest text-[#858585] mb-2">2. Ranking Global</div>
+                        <div className="text-[10px] text-[#D4D4D4] leading-relaxed space-y-2">
+                          <p>A nota do gráfico não é apenas a média do dia. O ranking usa a <strong className="text-[#4FC3F7]">Fórmula Bayesiana</strong> para evitar que "turistas" roubem o topo em 1 jogo.</p>
+                          <p>Você inicia com <strong className="text-[#F48771]">3 Jogos Fantasmas</strong> na base 6.0 que ancoram a nota. Conforme você joga, eles evaporam e sua nota real aparece.</p>
+                          <p className="border-t border-[#3E3E42] pt-2 mt-2">
+                            <strong className="text-[#89D185]">Bônus de Constância:</strong><br/>
+                            A cada 5 jogos disputados, você ganha <strong className="text-[#89D185]">+0.15</strong> na sua média global permanentemente. O suor é muito recompensado!
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   formChartData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
