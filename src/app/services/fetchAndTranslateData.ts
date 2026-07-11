@@ -228,29 +228,47 @@ function eventPlayerId(ev: any, kind: "player" | "assist"): string {
 }
 
 function calculateMatchRating(args: {
-  status: number;
-  goals: number;
-  assists: number;
-  ownGoals: number;
-  teamGoals: number;
-  conceded: number;
-  yellow: number;
-  red: number;
-  teamWinStreak?: number;
-}, rules: RatingRules): number {
+  status: number, goals: number, assists: number, ownGoals: number,
+  teamGoals: number, conceded: number, yellow: number, red: number, teamWinStreak?: number
+}, rules: any): number {
   let rating = rules.base || K_RATING_BASE;
-  if (args.status === 1) rating += rules.win || 1.0;
-  else if (args.status === -1) rating += rules.loss || -0.6; // Assuming loss is negative in rules
-  rating += args.goals * (rules.goal || 0.6);
-  rating += args.assists * (rules.assist || 0.4);
-  rating += args.ownGoals * (rules.own_goal || -0.8);
-  rating += args.yellow * (rules.yellow || -0.3);
-  rating += args.red * (rules.red || -1.2);
   
-  // Team contribution: small bump for high-scoring wins, penalty for blowouts
-  const margin = args.teamGoals - args.conceded;
-  rating += Math.max(-0.5, Math.min(0.5, margin * 0.05));
-  if ((args.teamWinStreak ?? 0) >= 3 && args.status === 1) rating += 0.1;
+  // Elo Lite Multipliers (mock for now on the web side unless provided)
+  const positiveMultiplier = 1.0;
+  const negativeMultiplier = 1.0;
+
+  if (args.status === 1) rating += (rules.win || 0.8) * positiveMultiplier;
+  else if (args.status === -1) rating += (rules.loss || -0.5) * negativeMultiplier;
+  
+  let attackImpact = (args.goals * (rules.goal || 1.0)) + (args.assists * (rules.assist || 0.8));
+  if (attackImpact > 0) attackImpact *= positiveMultiplier;
+  else if (attackImpact < 0) attackImpact *= negativeMultiplier;
+  rating += attackImpact;
+  
+  let disciplineImpact = (args.yellow * (rules.yellow || -0.5)) + (args.red * (rules.red || -1.5));
+  disciplineImpact *= negativeMultiplier;
+  rating += disciplineImpact;
+
+  // Own goal is treated directly
+  rating += args.ownGoals * (rules.own_goal || -1.0);
+
+  // Goal diff logic
+  const diff = Math.abs(args.teamGoals - args.conceded);
+  if (args.status === 1) {
+    rating += (diff * 0.05) * positiveMultiplier;
+  } else if (args.status === -1) {
+    rating += (-diff * 0.05) * negativeMultiplier;
+  }
+
+  // Team Goals bonus
+  if (args.teamGoals > 0 && args.status >= 0) {
+    rating += (args.teamGoals * (rules.team_goal || 0.1)) * positiveMultiplier;
+  }
+
+  // Clean sheet logic
+  if (args.conceded === 0 && args.status >= 0) {
+    rating += (rules.clean_sheet || 0.2) * positiveMultiplier;
+  }
   
   return Math.max(0, Math.min(10, rating));
 }
@@ -258,8 +276,13 @@ function calculateMatchRating(args: {
 function calculateFinalRating(ratings: number[]): number {
   if (!ratings || ratings.length === 0) return K_RATING_BASE;
   const sum = ratings.reduce((s, r) => s + r, 0);
-  const C = 5;
-  return (sum + K_RATING_BASE * C) / (ratings.length + C);
+  const C = 3; // Bayesian Anchor
+  let finalR = (sum + K_RATING_BASE * C) / (ratings.length + C);
+  
+  const volumeBonus = Math.floor(ratings.length / 5) * 0.15;
+  finalR += volumeBonus;
+  
+  return Math.max(0, Math.min(10, finalR));
 }
 
 export async function fetchAndTranslateData(syncCode: string): Promise<TranslatedData> {
@@ -423,8 +446,7 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
     if (match.players) {
       for (const p of safeArray<any>(match.players.red)) processPlayerRating(p, redStatus, scoreR, scoreW);
       for (const p of safeArray<any>(match.players.white)) processPlayerRating(p, whiteStatus, scoreW, scoreR);
-      if (match.players.gk_red) processPlayerRating(match.players.gk_red, redStatus, scoreR, scoreW);
-      if (match.players.gk_white) processPlayerRating(match.players.gk_white, whiteStatus, scoreW, scoreR);
+      // GKs are ignored from the main rating chart to match the App logic
     }
   }
 
