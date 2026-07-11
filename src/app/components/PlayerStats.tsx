@@ -6,7 +6,7 @@ import { useData } from "../DataContext";
 import { PlayerCard } from "./PlayerCard";
 import { Modal } from "./Modal";
 
-type Key = "ga" | "matches" | "goals" | "assists" | "ved" | "cards" | "hatTricks" | "gkWins" | "gkCleanSheets" | "gkGoalsConcededAvg" | "mvpCount" | "formLast10";
+type Key = "ga" | "matches" | "goals" | "assists" | "ved" | "cards" | "hatTricks" | "gkWins" | "gkCleanSheets" | "gkGoalsConcededAvg" | "gkNota" | "mvpCount" | "formLast10";
 type Period = "all" | "month" | "year" | "custom" | "last" | string;
 
 const cols: { key: Key; label: string; help: string }[] = [
@@ -21,10 +21,10 @@ const cols: { key: Key; label: string; help: string }[] = [
   { key: "formLast10", label: "Forma", help: "Média das últimas 10 partidas" },
 ];
 
-type AggStats = { matches: number; goals: number; assists: number; wins: number; draws: number; losses: number; yellowCards: number; redCards: number; hatTricks: number; gkGames: number; gkWins: number; gkCleanSheets: number; gkGoalsConceded: number; clutchGoals: number; ownGoals: number; };
+type AggStats = { matches: number; goals: number; assists: number; wins: number; draws: number; losses: number; yellowCards: number; redCards: number; hatTricks: number; gkGames: number; gkWins: number; gkCleanSheets: number; gkGoalsConceded: number; gkNota: number; clutchGoals: number; ownGoals: number; };
 
 function emptyAgg(): AggStats {
-  return { matches: 0, goals: 0, assists: 0, wins: 0, draws: 0, losses: 0, yellowCards: 0, redCards: 0, hatTricks: 0, gkGames: 0, gkWins: 0, gkCleanSheets: 0, gkGoalsConceded: 0, clutchGoals: 0, ownGoals: 0 };
+  return { matches: 0, goals: 0, assists: 0, wins: 0, draws: 0, losses: 0, yellowCards: 0, redCards: 0, hatTricks: 0, gkGames: 0, gkWins: 0, gkCleanSheets: 0, gkGoalsConceded: 0, gkNota: 0, clutchGoals: 0, ownGoals: 0 };
 }
 
 function val(p: Player & AggStats, k: Key): number {
@@ -267,6 +267,7 @@ export function PlayerStats() {
         gkWins: p.gkStats?.wins ?? 0,
         gkCleanSheets: p.gkStats?.clean_sheets ?? 0,
         gkGoalsConceded: p.gkStats?.goals_conceded ?? 0,
+        gkNota: p.gkStats?.nota ?? 0,
         ownGoals: p.advanced?.ownGoals ?? p.own_goals ?? 0,
         ...attachExtras(p)
       } as Player & AggStats & { mvpCount: number, formLast10: number, clutchGoals: number }));
@@ -274,8 +275,8 @@ export function PlayerStats() {
     // We pass null for from/to since we already filtered activeMatches
     const agg = aggregate(activeMatches, null, null);
     return players
-      .map((p) => ({ ...p, ...(agg.get(p.id) ?? emptyAgg()), ...attachExtras(p) }))
-      .filter((p) => p.matches > 0);
+      .map((p) => ({ ...p, ...(agg.get(p.id) ?? emptyAgg()), gkNota: p.gkStats?.nota ?? 0, ...attachExtras(p) }))
+      .filter((p) => p.matches > 0 || p.gkStats?.games !== undefined && p.gkStats.games > 0);
   }, [players, matches, sessions, validRanges, period, seasonsConfig]);
 
   const sorted = useMemo(() => {
@@ -309,6 +310,7 @@ export function PlayerStats() {
   const topGkWins = useMemo(() => getTop("gkWins", false, p => p.gkGames > 0), [merged]);
   const topGkClean = useMemo(() => getTop("gkCleanSheets", false, p => p.gkGames > 0), [merged]);
   const topGkGoalsAvg = useMemo(() => getTop("gkGoalsConcededAvg", true, p => p.gkGames >= 3), [merged]);
+  const topGkRating = useMemo(() => getTop("gkNota", false, p => p.gkGames >= 3), [merged]);
 
   const dynamicDuos = useMemo(() => {
     const playersMap = new Map(players.map(p => [p.id, p]));
@@ -388,8 +390,9 @@ export function PlayerStats() {
 
       {topGkWins.length > 0 && (
         <div className="mt-8 border-t border-[#3E3E42] pt-8">
-          <h2 className="text-white tracking-tight text-xl mb-4">Goleiros (Pódios)</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <h2 className="text-white tracking-tight text-xl mb-4 flex items-center gap-2">🧤 Paredões (Goleiros)</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <PodiumSection title="Luva de Ouro (Nota)" players={topGkRating} onSelect={setSelected} label="Nota" valueKey="gkNota" isFloat onOpenViewAll={() => openViewAll("gkNota", "Luva de Ouro (Mín 3 J.)")} />
             <PodiumSection title="Mais Vitórias" players={topGkWins} onSelect={setSelected} label="Vitórias" valueKey="gkWins" onOpenViewAll={() => openViewAll("gkWins", "Vitórias (Goleiros)")} />
             <PodiumSection title="Clean Sheets" players={topGkClean} onSelect={setSelected} label="Clean Sheets" valueKey="gkCleanSheets" onOpenViewAll={() => openViewAll("gkCleanSheets", "Clean Sheets")} />
             <PodiumSection title="Gols Sofridos (Média)" players={topGkGoalsAvg} onSelect={setSelected} label="Gols/Jogo" valueKey="gkGoalsConcededAvg" onOpenViewAll={() => openViewAll("gkGoalsConcededAvg", "Média Gols Sofridos (Mín 3 J.)")} />

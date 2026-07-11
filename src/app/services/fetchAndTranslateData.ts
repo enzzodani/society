@@ -44,7 +44,7 @@ export interface Player {
   losses: number;
   totalGames?: number;
   advanced?: PlayerAdvanced;
-  gkStats?: { games: number, wins: number, clean_sheets: number, goals_conceded: number };
+  gkStats?: { games: number, wins: number, clean_sheets: number, goals_conceded: number, nota: number };
   evolution_chart?: { date: string, nota: number }[];
   active_temporada_rating?: number;
   season_stats?: Record<string, {
@@ -329,6 +329,7 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
       wins: safeNumber(p.gk_stats.wins),
       clean_sheets: safeNumber(p.gk_stats.clean_sheets),
       goals_conceded: safeNumber(p.gk_stats.goals_conceded),
+      nota: safeNumber(p.gk_stats.nota),
     } : undefined,
     // We will build evolution_chart below dynamically.
     evolution_chart: [], 
