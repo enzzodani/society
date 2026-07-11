@@ -452,6 +452,19 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
     }
   }
 
+  // Override player rating and match count with web-recalculated values
+  // The Flutter export's active_temporada_rating uses volume bonus over ALL games ever,
+  // which inflates ratings. playerRatingsTracker only has outfield matches (GK excluded).
+  for (const p of playersAll) {
+    const tracker = playerRatingsTracker[p.id];
+    if (tracker && tracker.length > 0) {
+      p.rating = calculateFinalRating(tracker);
+      p.active_temporada_rating = p.rating;
+      p.matches = tracker.length;
+      p.totalGames = tracker.length;
+    }
+  }
+
   // Helper para buscar jogador pelo id local
   const getPlayerCache = (id: string, name: string): RosterPlayer => {
     const found = playersAll.find(x => x.id === id || x.name === name);
@@ -507,11 +520,9 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
       const gkRed = m.players?.gk_red;
       const gkWhite = m.players?.gk_white;
       
-      const allRed = [...rawRed, ...(gkRed ? [gkRed] : [])];
-      const allWhite = [...rawWhite, ...(gkWhite ? [gkWhite] : [])];
-      
-      for (const p of allRed) redIds.push(getPlayerCache(playerIdFromObject(p), safeString(p.name)));
-      for (const p of allWhite) whiteIds.push(getPlayerCache(playerIdFromObject(p), safeString(p.name)));
+      // Rosters contain ONLY field players - GKs are stored separately in gkRed/gkWhite
+      for (const p of rawRed) redIds.push(getPlayerCache(playerIdFromObject(p), safeString(p.name)));
+      for (const p of rawWhite) whiteIds.push(getPlayerCache(playerIdFromObject(p), safeString(p.name)));
       
       const events: MatchEvent[] = safeArray<any>(m.events).map(e => ({
         type: safeString(e.type),
