@@ -364,6 +364,15 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
   const playerRatingsTracker: Record<string, number[]> = {};
   for (const p of playersAll) playerRatingsTracker[p.id] = [];
 
+  const seasonsConfig: SeasonConfig[] = safeArray<any>(siteData.seasons_config).map(s => ({
+    id: safeString(s.id),
+    name: safeString(s.name),
+    startDate: safeString(s.startDate),
+    endDate: safeString(s.endDate),
+    isPreSeason: s.isPreSeason === true,
+    parentSeasonId: safeString(s.parentSeasonId),
+  }));
+
   const getSeasonInfo = (dateStr: string) => {
     if (!dateStr) return 'unknown';
     const dt = parseDate(dateStr)?.getTime() || 0;
@@ -695,15 +704,6 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
       }
     }
   }
-
-  const seasonsConfig: SeasonConfig[] = safeArray<any>(siteData.seasons_config).map(s => ({
-    id: safeString(s.id),
-    name: safeString(s.name),
-    startDate: safeString(s.startDate),
-    endDate: safeString(s.endDate),
-    isPreSeason: s.isPreSeason === true,
-    parentSeasonId: safeString(s.parentSeasonId),
-  }));
 
   console.log(
     `${TAG} concluído: `,
