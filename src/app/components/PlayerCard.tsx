@@ -245,8 +245,8 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
     const grouped: Record<string, { rawDate: string, goals: number, assists: number }> = {};
 
     for (const m of sortedMatches) {
-      const isRed = m.redRoster?.some(r => r.id === player.id) || m.gkRed?.id === player.id;
-      const isWhite = m.whiteRoster?.some(r => r.id === player.id) || m.gkWhite?.id === player.id;
+      const isRed = m.redRoster?.some(r => r.id === player.id);
+      const isWhite = m.whiteRoster?.some(r => r.id === player.id);
       if (!isRed && !isWhite) continue;
 
       let g = 0; let a = 0;
@@ -303,8 +303,8 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
     if (!data?.matches) return { ga: 0, goals: 0, assists: 0, wins: 0, draws: 0, losses: 0 };
 
     const playerMatches = data.matches.filter(m => {
-      const isRed = m.redRoster?.some(r => r.id === player.id) || m.gkRed?.id === player.id;
-      const isWhite = m.whiteRoster?.some(r => r.id === player.id) || m.gkWhite?.id === player.id;
+      const isRed = m.redRoster?.some(r => r.id === player.id);
+      const isWhite = m.whiteRoster?.some(r => r.id === player.id);
       return isRed || isWhite;
     }).sort((m1, m2) => new Date(m1.date).getTime() - new Date(m2.date).getTime());
 
@@ -321,8 +321,8 @@ export function PlayerCard({ player, onClose }: { player: Player; onClose: () =>
     let matchCount = 0;
 
     for (const m of filteredMatches) {
-      const isRed = m.redRoster?.some(r => r.id === player.id) || m.gkRed?.id === player.id;
-      const isWhite = m.whiteRoster?.some(r => r.id === player.id) || m.gkWhite?.id === player.id;
+      const isRed = m.redRoster?.some(r => r.id === player.id);
+      const isWhite = m.whiteRoster?.some(r => r.id === player.id);
 
       if (isRed || isWhite) matchCount++;
 

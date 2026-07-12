@@ -108,7 +108,7 @@ export interface MonthlyMVP {
   month: string;
   player: string;
   avatar: string;
-  goals: number; 
+  goals: number;
   assists?: number;
   ga?: number;
 }
@@ -234,19 +234,19 @@ export function calculateMatchRating(args: {
   teamGoals: number, conceded: number, yellow: number, red: number, teamWinStreak?: number
 }, rules: any): number {
   let rating = rules.base || K_RATING_BASE;
-  
+
   // Elo Lite Multipliers (mock for now on the web side unless provided)
   const positiveMultiplier = 1.0;
   const negativeMultiplier = 1.0;
 
   if (args.status === 1) rating += (rules.win || 0.8) * positiveMultiplier;
   else if (args.status === -1) rating += (rules.loss || -0.5) * negativeMultiplier;
-  
+
   let attackImpact = (args.goals * (rules.goal || 1.0)) + (args.assists * (rules.assist || 0.8));
   if (attackImpact > 0) attackImpact *= positiveMultiplier;
   else if (attackImpact < 0) attackImpact *= negativeMultiplier;
   rating += attackImpact;
-  
+
   let disciplineImpact = (args.yellow * (rules.yellow || -0.5)) + (args.red * (rules.red || -1.5));
   disciplineImpact *= negativeMultiplier;
   rating += disciplineImpact;
@@ -271,7 +271,7 @@ export function calculateMatchRating(args: {
   if (args.conceded === 0 && args.status >= 0) {
     rating += (rules.clean_sheet || 0.2) * positiveMultiplier;
   }
-  
+
   return Math.max(0, Math.min(10, rating));
 }
 
@@ -280,10 +280,10 @@ export function calculateFinalRating(ratings: number[]): number {
   const sum = ratings.reduce((s, r) => s + r, 0);
   const C = 3; // Bayesian Anchor
   let finalR = (sum + 6.0 * C) / (ratings.length + C);
-  
+
   const volumeBonus = Math.floor(ratings.length / 5) * 0.15;
   finalR += volumeBonus;
-  
+
   return Math.max(0, Math.min(10, finalR));
 }
 
@@ -291,7 +291,7 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
   console.log(`${TAG} Buscando syncCode="${syncCode}" no Firestore...`);
   const docRef = doc(db, "sync_data", syncCode);
   const snap = await getDoc(docRef);
-  
+
   if (!snap.exists()) {
     console.error(`${TAG} sync_data/${syncCode} não encontrado`);
     throw new Error(`Sync code "${syncCode}" não encontrado na base de dados.`);
@@ -299,7 +299,7 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
 
   const docData = snap.data() as Record<string, any>;
   const rawData = docData.data || {};
-  
+
   // Extrai o siteData consolidado pelo Flutter
   let siteData = docData.site_data;
   if (!siteData && rawData.site_data) {
@@ -357,13 +357,29 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
       nota: safeNumber(p.gk_stats.nota),
     } : undefined,
     // We will build evolution_chart below dynamically.
-    evolution_chart: [], 
+    evolution_chart: [],
   }));
 
   // Rebuild evolution_chart dynamically to bypass Flutter interpolation bugs
   const playerRatingsTracker: Record<string, number[]> = {};
   for (const p of playersAll) playerRatingsTracker[p.id] = [];
-  
+
+  const getSeasonInfo = (dateStr: string) => {
+    if (!dateStr) return 'unknown';
+    const dt = parseDate(dateStr)?.getTime() || 0;
+    if (!dt) return 'unknown';
+    for (const s of seasonsConfig) {
+      const st = parseDate(s.startDate)?.getTime() || 0;
+      const ed = parseDate(s.endDate);
+      if (ed) ed.setHours(23, 59, 59, 999);
+      const edTime = ed?.getTime() || 0;
+      if (st && edTime && dt >= st && dt <= edTime) {
+        return s.parentSeasonId || s.id;
+      }
+    }
+    return 'unknown';
+  };
+
   // We need to iterate over all historical matches chronologically
   // to build the evolution chart accurately.
   const historyRaw: any[] = [];
@@ -372,16 +388,16 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
       const historyKey = `match_history_${s.id}`;
       const hist = parseMaybeJSON<any[]>(rawData[historyKey], []);
       for (const m of hist) {
-         historyRaw.push({...m, session_date: s.timestamp || m.date});
+        historyRaw.push({ ...m, session_date: s.timestamp || m.date });
       }
     }
   }
-  
+
   // Sort oldest to newest
   historyRaw.sort((a, b) => {
-     const da = parseDate(a.date || a.session_date)?.getTime() || 0;
-     const db = parseDate(b.date || b.session_date)?.getTime() || 0;
-     return da - db;
+    const da = parseDate(a.date || a.session_date)?.getTime() || 0;
+    const db = parseDate(b.date || b.session_date)?.getTime() || 0;
+    return da - db;
   });
 
   const ratingRules = siteData.rating_rules || {
@@ -389,7 +405,19 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
     clean_sheet: 0.2, team_goal: 0.1
   };
 
+  let currentTemporada = "";
+
   for (const match of historyRaw) {
+    const sessionDate = match.date || match.session_date;
+    const tId = getSeasonInfo(sessionDate);
+    
+    if (tId !== currentTemporada) {
+      currentTemporada = tId;
+      for (const k of Object.keys(playerRatingsTracker)) {
+        playerRatingsTracker[k] = [];
+      }
+    }
+
     const scoreR = safeNumber(match.scoreRed);
     const scoreW = safeNumber(match.scoreWhite);
     const redStatus = scoreR > scoreW ? 1 : (scoreR === scoreW ? 0 : -1);
@@ -415,7 +443,7 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
     const processPlayerRating = (pObj: any, status: number, scored: number, conceded: number) => {
       const pId = playerIdFromObject(pObj);
       if (!pId || !playerRatingsTracker[pId]) return;
-      
+
       const g = matchPlayerEvents[pId]?.g || 0;
       const a = matchPlayerEvents[pId]?.a || 0;
       const og = matchPlayerEvents[pId]?.og || 0;
@@ -425,22 +453,22 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
       const mRating = calculateMatchRating({
         status, goals: g, assists: a, ownGoals: og, teamGoals: scored, conceded, yellow: yc, red: rc
       }, ratingRules);
-      
+
       playerRatingsTracker[pId].push(mRating);
-      
+
       const pRef = playersAll.find(x => x.id === pId);
       if (pRef && pRef.evolution_chart) {
         const dateKey = normalizeDate(match.date || match.session_date).slice(0, 10);
         const finalNota = calculateFinalRating(playerRatingsTracker[pId]);
-        
+
         const lastEntry = pRef.evolution_chart[pRef.evolution_chart.length - 1];
         if (lastEntry && lastEntry.date.slice(0, 10) === dateKey) {
-            lastEntry.nota = finalNota;
+          lastEntry.nota = finalNota;
         } else {
-            pRef.evolution_chart.push({
-              date: normalizeDate(match.date || match.session_date),
-              nota: finalNota
-            });
+          pRef.evolution_chart.push({
+            date: normalizeDate(match.date || match.session_date),
+            nota: finalNota
+          });
         }
       }
     };
@@ -510,20 +538,20 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
   for (const s of sessions) {
     const historyKey = `match_history_${s.id}`;
     const history = parseMaybeJSON<any[]>(rawData[historyKey], []);
-    
+
     for (const m of history) {
       const redIds: RosterPlayer[] = [];
       const whiteIds: RosterPlayer[] = [];
-      
+
       const rawRed = safeArray<any>(m.players?.red);
       const rawWhite = safeArray<any>(m.players?.white);
       const gkRed = m.players?.gk_red;
       const gkWhite = m.players?.gk_white;
-      
+
       // Rosters contain ONLY field players - GKs are stored separately in gkRed/gkWhite
       for (const p of rawRed) redIds.push(getPlayerCache(playerIdFromObject(p), safeString(p.name)));
       for (const p of rawWhite) whiteIds.push(getPlayerCache(playerIdFromObject(p), safeString(p.name)));
-      
+
       const events: MatchEvent[] = safeArray<any>(m.events).map(e => ({
         type: safeString(e.type),
         player: safeString(e.player),
@@ -556,7 +584,7 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
   const monthlyMVPs: MonthlyMVP[] = [];
   let yearChampion: YearChampion | null = null;
   let lastMonthMVP: MonthlyMVP | null = null;
-  
+
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const currentYear = now.getFullYear();
@@ -578,7 +606,7 @@ export async function fetchAndTranslateData(syncCode: string): Promise<Translate
       if (ev.type === "goal" && ev.playerId) {
         if (!playerStatsByMonth[monthKey][ev.playerId]) playerStatsByMonth[monthKey][ev.playerId] = { g: 0, a: 0 };
         playerStatsByMonth[monthKey][ev.playerId].g += 1;
-        
+
         if (!playerStatsByYear[yearKey][ev.playerId]) playerStatsByYear[yearKey][ev.playerId] = { g: 0 };
         playerStatsByYear[yearKey][ev.playerId].g += 1;
       }
