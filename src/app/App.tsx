@@ -161,88 +161,90 @@ function Header({ onNavigate, onMenuToggle }: { onNavigate: (s: Section) => void
         )}
       </div>
 
-      <div className="relative">
-        <button onClick={() => setShowNotifs((v) => !v)} className="relative w-9 h-9 rounded-md bg-[#2D2D30] hover:bg-[#3E3E42] border border-[#3E3E42] flex items-center justify-center">
-          <Bell className="w-4 h-4 text-[#CCCCCC]" />
-          {unread > 0 && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#007ACC]" />}
-        </button>
-        {showNotifs && (
-          <div className="absolute right-0 top-full mt-2 w-80 rounded-md bg-[#252526] border border-[#3E3E42] shadow-lg overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#3E3E42]">
-              <span className="text-sm text-white">Notificações</span>
-              {unread > 0 && (
-                <button onClick={markAllRead} className="text-[10px] uppercase tracking-widest text-[#4FC3F7] hover:underline">
-                  Marcar todas
-                </button>
-              )}
-            </div>
-            <div className="max-h-80 overflow-y-auto">
-              {notifications.length === 0 ? (
-                <div className="px-4 py-6 text-center text-sm text-[#858585]">Sem notificações</div>
-              ) : (
-                notifications.map((n) => (
-                  <div key={n.id} className="px-4 py-3 border-b border-[#3E3E42] last:border-b-0 hover:bg-[#2A2D2E]">
-                    <div className="flex items-center gap-2">
-                      <div className={`text-sm ${n.read ? "text-[#CCCCCC]" : "text-white"}`}>{n.title}</div>
-                      {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-[#007ACC]" />}
+      <div className="flex items-center gap-2 md:gap-4 ml-auto">
+        <div className="relative">
+          <button onClick={() => setShowNotifs((v) => !v)} className="relative w-9 h-9 rounded-md bg-[#2D2D30] hover:bg-[#3E3E42] border border-[#3E3E42] flex items-center justify-center">
+            <Bell className="w-4 h-4 text-[#CCCCCC]" />
+            {unread > 0 && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#007ACC]" />}
+          </button>
+          {showNotifs && (
+            <div className="absolute right-0 top-full mt-2 w-80 rounded-md bg-[#252526] border border-[#3E3E42] shadow-lg overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#3E3E42]">
+                <span className="text-sm text-white">Notificações</span>
+                {unread > 0 && (
+                  <button onClick={markAllRead} className="text-[10px] uppercase tracking-widest text-[#4FC3F7] hover:underline">
+                    Marcar todas
+                  </button>
+                )}
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-sm text-[#858585]">Sem notificações</div>
+                ) : (
+                  notifications.map((n) => (
+                    <div key={n.id} className="px-4 py-3 border-b border-[#3E3E42] last:border-b-0 hover:bg-[#2A2D2E]">
+                      <div className="flex items-center gap-2">
+                        <div className={`text-sm ${n.read ? "text-[#CCCCCC]" : "text-white"}`}>{n.title}</div>
+                        {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-[#007ACC]" />}
+                      </div>
+                      <div className="text-xs text-[#858585] mt-0.5">{n.body}</div>
+                      <div className="text-[10px] text-[#858585] mt-1 tabular-nums">{new Date(n.date).toLocaleDateString("pt-BR")}</div>
                     </div>
-                    <div className="text-xs text-[#858585] mt-0.5">{n.body}</div>
-                    <div className="text-[10px] text-[#858585] mt-1 tabular-nums">{new Date(n.date).toLocaleDateString("pt-BR")}</div>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <button onClick={() => setShowExportModal(true)} title="Baixar dados do site" className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#2D2D30] hover:bg-[#3E3E42] border border-[#3E3E42] text-sm text-[#CCCCCC] ml-2">
+          <Download className="w-4 h-4" />
+          <span className="hidden md:inline">Baixar Dados</span>
+        </button>
+
+        <div className="flex items-center gap-3 pl-2 md:pl-4 border-l border-[#3E3E42]">
+          <div className="hidden sm:block text-right">
+            <div className="text-sm text-white">Você</div>
+            <div className="text-[10px] text-[#858585] uppercase tracking-widest">Admin</div>
+          </div>
+          <div className="w-9 h-9 rounded-full bg-[#007ACC] flex items-center justify-center shrink-0 text-white text-sm">A</div>
+        </div>
+
+        {showExportModal && (
+          <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#252526] border border-[#3E3E42] rounded-md max-w-sm w-full">
+              <div className="flex items-center justify-between p-4 border-b border-[#3E3E42]">
+                <h2 className="text-white font-medium text-lg tracking-tight">Exportar Dados</h2>
+                <button onClick={() => setShowExportModal(false)} className="text-[#858585] hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5">
+                <p className="text-sm text-[#CCCCCC] mb-4">Escolha os dados que deseja baixar para fazer backup ou análise off-line.</p>
+                
+                <label className="text-[11px] uppercase tracking-widest text-[#858585] block mb-2">Escopo do Backup</label>
+                <select 
+                  value={exportSeason} 
+                  onChange={e => setExportSeason(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-[#1E1E1E] border border-[#3E3E42] text-sm text-white focus:outline-none focus:border-[#007ACC] mb-6"
+                >
+                  <option value="all">Todo o Banco de Dados (Completo)</option>
+                  {data?.seasonsConfig?.map(s => (
+                    <option key={s.id} value={s.id}>Apenas Temporada: {s.name}</option>
+                  ))}
+                </select>
+
+                <div className="flex justify-end gap-3">
+                  <button onClick={() => setShowExportModal(false)} className="px-4 py-2 rounded-md text-sm text-[#CCCCCC] hover:text-white transition">Cancelar</button>
+                  <button onClick={handleExportJSON} className="flex items-center gap-2 px-4 py-2 rounded-md bg-[#007ACC] text-white text-sm hover:bg-[#005A9E] transition">
+                    <Download className="w-4 h-4" /> Baixar JSON
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
       </div>
-
-      <button onClick={() => setShowExportModal(true)} title="Baixar dados do site" className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#2D2D30] hover:bg-[#3E3E42] border border-[#3E3E42] text-sm text-[#CCCCCC] ml-2">
-        <Download className="w-4 h-4" />
-        <span className="hidden md:inline">Baixar Dados</span>
-      </button>
-
-      <div className="flex items-center gap-3 pl-2 md:pl-4 border-l border-[#3E3E42]">
-        <div className="hidden sm:block text-right">
-          <div className="text-sm text-white">Você</div>
-          <div className="text-[10px] text-[#858585] uppercase tracking-widest">Admin</div>
-        </div>
-        <div className="w-9 h-9 rounded-full bg-[#007ACC] flex items-center justify-center shrink-0 text-white text-sm">A</div>
-      </div>
-
-      {showExportModal && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#252526] border border-[#3E3E42] rounded-md max-w-sm w-full">
-            <div className="flex items-center justify-between p-4 border-b border-[#3E3E42]">
-              <h2 className="text-white font-medium text-lg tracking-tight">Exportar Dados</h2>
-              <button onClick={() => setShowExportModal(false)} className="text-[#858585] hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5">
-              <p className="text-sm text-[#CCCCCC] mb-4">Escolha os dados que deseja baixar para fazer backup ou análise off-line.</p>
-              
-              <label className="text-[11px] uppercase tracking-widest text-[#858585] block mb-2">Escopo do Backup</label>
-              <select 
-                value={exportSeason} 
-                onChange={e => setExportSeason(e.target.value)}
-                className="w-full px-3 py-2 rounded-md bg-[#1E1E1E] border border-[#3E3E42] text-sm text-white focus:outline-none focus:border-[#007ACC] mb-6"
-              >
-                <option value="all">Todo o Banco de Dados (Completo)</option>
-                {data?.seasonsConfig?.map(s => (
-                  <option key={s.id} value={s.id}>Apenas Temporada: {s.name}</option>
-                ))}
-              </select>
-
-              <div className="flex justify-end gap-3">
-                <button onClick={() => setShowExportModal(false)} className="px-4 py-2 rounded-md text-sm text-[#CCCCCC] hover:text-white transition">Cancelar</button>
-                <button onClick={handleExportJSON} className="flex items-center gap-2 px-4 py-2 rounded-md bg-[#007ACC] text-white text-sm hover:bg-[#005A9E] transition">
-                  <Download className="w-4 h-4" /> Baixar JSON
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </header>
   );
 }
